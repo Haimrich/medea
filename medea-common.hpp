@@ -18,7 +18,11 @@ namespace medea {
 struct Individual {
   Mapping genome;
   model::Engine engine;
-  double fitness;
+  double energy;
+  double latency;
+  double rank;
+  double crowding_distance;
+  double fitness; // temp
 };
 
 typedef std::vector<Individual> Population;

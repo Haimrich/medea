@@ -40,22 +40,24 @@ public:
 private:
   // Configuration information sent from main thread.
   unsigned thread_id_;
+
   problem::Workload &workload_;
   model::Engine::Specs arch_specs_;
   ArchProperties arch_props_;
   mapspace::MapSpace* mapspace_;
   mapping::Constraints* constraints_;
+
   Individual* global_best_individual_;
-  Population &parent_population_;
-  Population &population_;
+  Population &parent_population_, &population_;
+
   Orchestrator* thread_orchestrator_;
   uint64_t next_iteration_ = 1;
   std::mutex* global_mutex_;
-
   uint32_t num_threads_;
+
   uint32_t population_size_;
-  uint32_t elite_population_size_;
-  uint32_t generations_;
+  uint32_t immigrant_population_size_;
+  uint32_t num_generations_;
   uint32_t mutation_prob_ = 50;
 
   std::thread thread_;
@@ -453,6 +455,17 @@ private:
     }
   }
 
+  void InitialPopulation(uint32_t p, uint32_t pop_slice_end) {
+    while (p < pop_slice_end)
+    {
+      // Mapping generation
+      Mapping mapping;
+      if (!RandomMapping(&mapping)) 
+        continue;
+      if (Evaluate(mapping, parent_population_[p]))
+        p++;
+    }
+  }
 
  public:
   MedeaThread(
@@ -468,7 +481,7 @@ private:
     std::mutex* global_mutex,
     uint32_t num_threads,
     uint32_t population_size,
-    uint32_t elite_population_size,
+    uint32_t immigrant_population_size,
     uint32_t generations,
     RandomGenerator128* if_rng,
     RandomGenerator128* lp_rng,
@@ -489,8 +502,8 @@ private:
       global_mutex_(global_mutex),
       num_threads_(num_threads),
       population_size_(population_size),
-      elite_population_size_(elite_population_size),
-      generations_(generations),
+      immigrant_population_size_(immigrant_population_size),
+      num_generations_(generations),
       thread_(),
       if_rng_(if_rng),
       lp_rng_(lp_rng),
@@ -525,24 +538,13 @@ private:
     uint32_t pop_slice_start = thread_id_ * slice_size;
     uint32_t pop_slice_end = (thread_id_ == (num_threads_ - 1)) ? population_size_ : (pop_slice_start + slice_size);
 
-    uint32_t elite_slice_size = (population_size_ - elite_population_size_) / num_threads_;
-    uint32_t elite_pop_slice_start = elite_population_size_ + thread_id_ * elite_slice_size;
-    uint32_t elite_pop_slice_end = (thread_id_ == (num_threads_ - 1)) ? population_size_ : (elite_pop_slice_start + elite_slice_size);
+    uint32_t imm_slice_size = immigrant_population_size_ / num_threads_;
+    uint32_t imm_pop_slice_start = (population_size_ - immigrant_population_size_) + thread_id_ * imm_slice_size;
+    uint32_t imm_pop_slice_end = (thread_id_ == (num_threads_ - 1)) ? population_size_ : (imm_pop_slice_start + imm_slice_size);
     
-    // ===================
     // Initial population.
-    // ===================
     thread_orchestrator_->FollowerWait(next_iteration_);
-    uint32_t p = pop_slice_start;
-    while (p < pop_slice_end)
-    {
-      // Mapping generation
-      Mapping mapping;
-      if (!RandomMapping(&mapping)) 
-        continue;
-      if (Evaluate(mapping, parent_population_[p]))
-        p++;
-    }
+    InitialPopulation(pop_slice_start, pop_slice_end);
 
     thread_orchestrator_->FollowerDone();
 
@@ -550,7 +552,7 @@ private:
 
     // Wait for others
     thread_orchestrator_->FollowerWait(next_iteration_);
-    for (uint32_t g = 0; g < generations_; g++) {
+    for (uint32_t g = 0; g < num_generations_; g++) {
       uint64_t debug_cross_count = 0;
       for (uint32_t ep = pop_slice_start; ep < pop_slice_end; ep += 2) {
 
@@ -572,9 +574,9 @@ private:
       // Wait for others and ordering in main
       thread_orchestrator_->FollowerWait(next_iteration_);
 
-      // Mutation
-      p = elite_pop_slice_start;
-      while (p < elite_pop_slice_end)
+      // Immigration
+      uint64_t p = imm_pop_slice_start;
+      while (p < imm_pop_slice_end)
       {
         Mapping mapping;
         if (!RandomMapping(&mapping)) 

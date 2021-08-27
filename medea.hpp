@@ -5,6 +5,7 @@
 
 #include <fstream>
 #include <iomanip>
+#include <cmath> 
 
 #include "util/accelergy_interface.hpp"
 #include "compound-config/compound-config.hpp"
@@ -30,9 +31,9 @@ class Medea
   std::string out_dir_ = ".";
   std::string out_prefix_ = "medea";
 
-  uint32_t generations_;
+  uint32_t num_generations_;
   uint32_t population_size_;
-  uint32_t elite_population_size_;
+  uint32_t immigrant_population_size_;
 
   Population population_, parent_population_, merged_population_;
 
@@ -123,18 +124,18 @@ class Medea
     // Mapper
     auto mapper = rootNode.lookup("mapper");
 
-    generations_ = 30;
-    mapper.lookupValue("num-generations", generations_);
+    num_generations_ = 30;
+    mapper.lookupValue("num-generations", num_generations_);
     population_size_ = 100;
     mapper.lookupValue("population-size", population_size_);
-    elite_population_size_ = 60;
-    mapper.lookupValue("elite-population-size", elite_population_size_);
+    immigrant_population_size_ = 40;
+    mapper.lookupValue("immigrant-population-size", immigrant_population_size_);
 
     population_.resize(population_size_);
     parent_population_.resize(population_size_);
-    merged_population_.resize(2*population_size_);
+    merged_population_.resize(2*population_size_+immigrant_population_size_);
 
-    std::cout << "Num. generations: " << generations_ << " - Pop. size: " << population_size_ << " - Elite pop. size: " << elite_population_size_ << std::endl;
+    std::cout << "Num. generations: " << num_generations_ << " - Pop. size: " << population_size_ << " - Immigrant pop. size: " << immigrant_population_size_ << std::endl;
   
     num_threads_ = std::thread::hardware_concurrency();
     if (mapper.lookupValue("num-threads", num_threads_))
@@ -170,58 +171,6 @@ class Medea
     
   }
 
-  // Stochastic Universal Sampling Selection
-  void SUS() {
-    double fitness_sum = 0.0;
-    double min_fitness = 0.0;
-    for (auto& i : merged_population_) if (i.fitness < min_fitness) min_fitness = i.fitness;
-    for (auto& i : merged_population_) fitness_sum += i.fitness - min_fitness;
-    double intsize = fitness_sum / population_size_;
-    
-    double ptr = proba(rng) * intsize;
-
-    for (uint64_t i = 0; i < population_size_; i++) {
-      unsigned j = 0;
-      double fsum = 0.0;
-
-      while (fsum <= ptr) {
-        fsum += merged_population_[j].fitness - min_fitness;
-        j++;
-      }
-      parent_population_[i] = merged_population_[j-1];
-
-      ptr += intsize;
-    }
-  }
-
-  // Fitness proportional roulette wheel
-  void RWS() {
-    double fitness_sum = 0.0;
-    double min_fitness = 0.0;
-    for (auto& i : merged_population_) if (i.fitness < min_fitness) min_fitness = i.fitness;
-    for (auto& i : merged_population_) fitness_sum += i.fitness - min_fitness;
-    
-    
-    for (uint64_t i = 0; i < population_size_; i++) {
-      unsigned old_j = population_size_;
-      unsigned j;
-
-      // Avoiding consecutive repeating genomes because crossover would be useless
-      do { 
-        j = 0;
-        double fsum = proba(rng) * fitness_sum;
-
-        while (fsum >= 0.0) {
-          fsum -= merged_population_[j].fitness - min_fitness;
-          j++;
-        }
-      } while ( (j == old_j) && (i % 2) );
-      
-      old_j = j;
-      parent_population_[i] = merged_population_[j-1];
-    }
-  }
-
   // Custom Selection
   void Selection() {
     // Select best ones as new parent population
@@ -229,6 +178,83 @@ class Medea
 
     // Shuffle
     std::shuffle(std::begin(parent_population_), std::end(parent_population_), rng);
+  }
+
+  bool CheckDominance(Individual& a, Individual& b) {
+    return (a.energy <= b.energy && a.latency < b.latency) ||
+           (a.energy < b.energy && a.latency <= b.latency);
+  }
+
+  void AssignCrowdingDistance(Population& population, std::vector<uint64_t>& pareto_front) {
+    std::sort(pareto_front.begin(), pareto_front.end(), [&](const uint64_t & a, const uint64_t & b) -> bool { return population[a].energy < population[b].energy; });
+    
+    population[pareto_front.front()].crowding_distance = std::numeric_limits<double>::max();
+    population[pareto_front.back()].crowding_distance = std::numeric_limits<double>::max();
+
+    double range = population[pareto_front.back()].energy - population[pareto_front.front()].energy;
+    assert(range >= 0);
+
+    for (uint64_t i = 1; i < pareto_front.size() - 1; i++) {
+      uint64_t r_prev = pareto_front[i-1];
+      uint64_t r_next = pareto_front[i+1];
+      uint64_t r_this = pareto_front[i];
+      population[r_this].crowding_distance = std::abs(population[r_next].energy - population[r_prev].energy) / range;
+    }
+
+    std::sort(pareto_front.begin(), pareto_front.end(), [&](const uint64_t & a, const uint64_t & b) -> bool { return population[a].latency < population[b].latency; });
+    
+    population[pareto_front.front()].crowding_distance = std::numeric_limits<double>::max();
+    population[pareto_front.back()].crowding_distance = std::numeric_limits<double>::max();
+
+    range = population[pareto_front.back()].latency - population[pareto_front.front()].latency;
+
+    for (uint64_t i = 1; i < pareto_front.size() - 1; i++) {
+      uint64_t r_prev = pareto_front[i-1];
+      uint64_t r_next = pareto_front[i+1];
+      uint64_t r_this = pareto_front[i];
+      population[r_this].crowding_distance += std::abs(population[r_next].latency - population[r_prev].latency) / range;
+    }
+  
+  }
+
+  void AssignRankAndCrowdingDistance(Population& population) {
+    std::vector<uint64_t> pareto_front;
+    std::vector<std::vector<uint64_t>> dominated_by;
+    std::vector<uint64_t> num_dominating(population.size(), 0);
+
+    for (uint64_t i = 0; i < population.size(); i++) {
+      std::vector<uint64_t> dominated_ind;
+      for (uint64_t j = 0; j < population.size(); i++) {
+        if (CheckDominance(population[i], population[j]))
+          dominated_ind.push_back(j);
+        else if (i != j)
+          num_dominating[i]++;
+      }
+      if (num_dominating[i] == 0) {
+        population[i].rank = 0;
+        pareto_front.push_back(i);
+      }
+
+      dominated_by.push_back(dominated_ind);
+    }
+
+    uint64_t f = 0;
+    while (!pareto_front.empty()) {
+      AssignCrowdingDistance(population, pareto_front);
+
+      std::vector<uint64_t> new_pareto_front;
+      for (auto p : pareto_front) {
+        for (auto q : dominated_by[p]) {
+          num_dominating[q]--;
+          if (num_dominating[q] == 0) {
+            population[q].rank = f+1;
+            new_pareto_front.push_back(q);
+          }
+        }
+      }
+      f++;
+      pareto_front = new_pareto_front;
+    }
   }
 
   // ---------------
@@ -261,8 +287,8 @@ class Medea
           &best_mutex_,
           num_threads_,
           population_size_,
-          elite_population_size_,
-          generations_,
+          immigrant_population_size_,
+          num_generations_,
           if_rng_,
           lp_rng_,
           db_rng_,
@@ -280,9 +306,11 @@ class Medea
     
     std::cout << "[INFO] Initial Population Done." << std::endl;
 
+    AssignRankAndCrowdingDistance(parent_population_);
+
     thread_orchestrator_->LeaderDone();
 
-    for (uint32_t g = 0; g < generations_; g++) {
+    for (uint32_t g = 0; g < num_generations_; g++) {
       
       // Wait Crossover
       thread_orchestrator_->LeaderWait();
@@ -294,10 +322,10 @@ class Medea
           return a.fitness > b.fitness; 
       });
 
-      // Start mutation
+      // Start immigration
       thread_orchestrator_->LeaderDone();
 
-      // Wait for Mutation
+      // Wait for immigration
       thread_orchestrator_->LeaderWait();
 
       // Merge parent and offspring pop
