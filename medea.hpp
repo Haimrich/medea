@@ -35,7 +35,7 @@ class Medea
   uint32_t population_size_;
   uint32_t immigrant_population_size_;
 
-  Population population_, parent_population_, merged_population_;
+  Population population_, parent_population_, immigrant_population_, merged_population_;
 
   Orchestrator* thread_orchestrator_;
   std::mutex best_mutex_;
@@ -133,6 +133,7 @@ class Medea
 
     population_.resize(population_size_);
     parent_population_.resize(population_size_);
+    immigrant_population_.resize(immigrant_population_size_);
     merged_population_.resize(2*population_size_+immigrant_population_size_);
 
     std::cout << "Num. generations: " << num_generations_ << " - Pop. size: " << population_size_ << " - Immigrant pop. size: " << immigrant_population_size_ << std::endl;
@@ -171,10 +172,14 @@ class Medea
     
   }
 
-  // Custom Selection
-  void Selection() {
-    // Select best ones as new parent population
-    std::copy(merged_population_.begin(), merged_population_.begin()+population_size_, parent_population_.begin());
+  void Survival() {
+    // Sort by rank and crowding distance and select population_size_
+    std::partial_sort_copy(
+      merged_population_.begin(), merged_population_.end(),
+      parent_population_.begin(), parent_population_.end(),
+      [&](const Individual & a, const Individual & b) -> bool { 
+        return a.rank < b.rank || (a.rank == b.rank && a.crowding_distance > b.crowding_distance); 
+    });
 
     // Shuffle
     std::shuffle(std::begin(parent_population_), std::end(parent_population_), rng);
@@ -224,7 +229,7 @@ class Medea
 
     for (uint64_t i = 0; i < population.size(); i++) {
       std::vector<uint64_t> dominated_ind;
-      for (uint64_t j = 0; j < population.size(); i++) {
+      for (uint64_t j = 0; j < population.size(); j++) {
         if (CheckDominance(population[i], population[j]))
           dominated_ind.push_back(j);
         else if (i != j)
@@ -257,6 +262,24 @@ class Medea
     }
   }
 
+  void Merging() {
+    std::copy(
+      population_.begin(),
+      population_.end(),
+      merged_population_.begin()
+    );
+    std::copy(
+      parent_population_.begin(),
+      parent_population_.end(),
+      merged_population_.begin()+population_size_
+    );
+    std::copy(
+      immigrant_population_.begin(),
+      immigrant_population_.end(),
+      merged_population_.begin()+population_size_
+    );
+  }
+
   // ---------------
   // Run the mapper.
   // ---------------
@@ -281,6 +304,7 @@ class Medea
           mapspace_,
           constraints_,
           &best_individual_,
+          immigrant_population_,
           parent_population_,
           population_,
           thread_orchestrator_,
@@ -312,32 +336,13 @@ class Medea
 
     for (uint32_t g = 0; g < num_generations_; g++) {
       
-      // Wait Crossover
+      // Wait Crossover, Mutation and Immigration
       thread_orchestrator_->LeaderWait();
 
-      // Order by fitness
-      std::sort(population_.begin(), population_.end(), 
-          [](const Individual & a, const Individual & b) -> bool
-      { 
-          return a.fitness > b.fitness; 
-      });
-
-      // Start immigration
-      thread_orchestrator_->LeaderDone();
-
-      // Wait for immigration
-      thread_orchestrator_->LeaderWait();
-
-      // Merge parent and offspring pop
-      std::merge(population_.begin(), population_.end(), parent_population_.begin(), parent_population_.end(), merged_population_.begin(),
-      [](const Individual & a, const Individual & b) -> bool
-      { 
-          return a.fitness > b.fitness; 
-      });
-
-      Selection();
-      //SUS();
-      //RWS();
+      // Select for next generation
+      Merging();
+      AssignRankAndCrowdingDistance(merged_population_);
+      Survival();
 
       double mean = 0.0;
       for (auto& i : parent_population_) mean += i.fitness;

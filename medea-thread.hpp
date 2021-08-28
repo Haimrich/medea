@@ -48,7 +48,7 @@ private:
   mapping::Constraints* constraints_;
 
   Individual* global_best_individual_;
-  Population &parent_population_, &population_;
+  Population &immigrant_population_, &parent_population_, &population_;
 
   Orchestrator* thread_orchestrator_;
   uint64_t next_iteration_ = 1;
@@ -116,7 +116,8 @@ private:
     // Lightweight pre-eval
     auto status_per_level = engine.PreEvaluationCheck(mapping, workload_);
     if (!EngineSuccess(status_per_level)) {
-      individual.fitness = - std::numeric_limits<double>::max();
+      individual.energy = std::numeric_limits<double>::max();
+      individual.latency = std::numeric_limits<double>::max();
       individual.engine = engine;
       return false;
     }
@@ -124,13 +125,16 @@ private:
     // Heavyweight evaluation
     status_per_level = engine.Evaluate(mapping, workload_);
     if (!EngineSuccess(status_per_level)) {
-      individual.fitness = - std::numeric_limits<double>::max();
+      individual.energy = std::numeric_limits<double>::max();
+      individual.latency = std::numeric_limits<double>::max();
       individual.engine = engine;
       return false;
     }
 
     // Population update
     individual.genome = mapping;
+    individual.energy = engine.Energy();
+    individual.latency = engine.Cycles();
     individual.fitness = Fitness(engine);
     individual.engine = engine;
 
@@ -455,14 +459,14 @@ private:
     }
   }
 
-  void InitialPopulation(uint32_t p, uint32_t pop_slice_end) {
+  void RandomPopulation(uint32_t p, uint32_t pop_slice_end, Population& population) {
     while (p < pop_slice_end)
     {
       // Mapping generation
       Mapping mapping;
       if (!RandomMapping(&mapping)) 
         continue;
-      if (Evaluate(mapping, parent_population_[p]))
+      if (Evaluate(mapping, population[p]))
         p++;
     }
   }
@@ -475,6 +479,7 @@ private:
     mapspace::MapSpace* mapspace,
     mapping::Constraints* constraints,
     Individual* best_individual,
+    std::vector<Individual>& immigrant_population,
     std::vector<Individual>& parent_population,
     std::vector<Individual>& population,
     Orchestrator* thread_orchestrator,
@@ -496,6 +501,7 @@ private:
       mapspace_(mapspace),
       constraints_(constraints),
       global_best_individual_(best_individual),
+      immigrant_population_(immigrant_population),
       parent_population_(parent_population),
       population_(population),
       thread_orchestrator_(thread_orchestrator),
@@ -539,12 +545,13 @@ private:
     uint32_t pop_slice_end = (thread_id_ == (num_threads_ - 1)) ? population_size_ : (pop_slice_start + slice_size);
 
     uint32_t imm_slice_size = immigrant_population_size_ / num_threads_;
-    uint32_t imm_pop_slice_start = (population_size_ - immigrant_population_size_) + thread_id_ * imm_slice_size;
-    uint32_t imm_pop_slice_end = (thread_id_ == (num_threads_ - 1)) ? population_size_ : (imm_pop_slice_start + imm_slice_size);
+    imm_slice_size -= imm_slice_size % 2;
+    uint32_t imm_pop_slice_start = thread_id_ * imm_slice_size;
+    uint32_t imm_pop_slice_end = (thread_id_ == (num_threads_ - 1)) ? immigrant_population_size_ : (imm_pop_slice_start + imm_slice_size);
     
     // Initial population.
     thread_orchestrator_->FollowerWait(next_iteration_);
-    InitialPopulation(pop_slice_start, pop_slice_end);
+    RandomPopulation(pop_slice_start, pop_slice_end, parent_population_);
 
     thread_orchestrator_->FollowerDone();
 
@@ -568,25 +575,13 @@ private:
       }
 
       std::cout << "[T"<< thread_id_ << "] Successfully evaluated " << debug_cross_count << "/" << pop_slice_end - pop_slice_start << " crossed mappings." << std::endl;
-      thread_orchestrator_->FollowerDone();
+
       UpdateBestMapping();
 
-      // Wait for others and ordering in main
-      thread_orchestrator_->FollowerWait(next_iteration_);
-
       // Immigration
-      uint64_t p = imm_pop_slice_start;
-      while (p < imm_pop_slice_end)
-      {
-        Mapping mapping;
-        if (!RandomMapping(&mapping)) 
-          continue;
+      RandomPopulation(imm_pop_slice_start, imm_pop_slice_end, immigrant_population_);
 
-        if (Evaluate(mapping, population_[p]))
-          p++;
-      }
-
-      std::cout << "[T"<< thread_id_ << "] Mutation completed" << std::endl;
+      std::cout << "[T"<< thread_id_ << "] Immigration completed" << std::endl;
       thread_orchestrator_->FollowerDone();
       UpdateBestMapping(); 
 
