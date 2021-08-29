@@ -66,6 +66,8 @@ private:
   std::default_random_engine generator;
   std::exponential_distribution<double> exp_distribution;
   std::uniform_real_distribution<double> uni_distribution;
+  std::uniform_int_distribution<uint64_t> tour_distribution_;
+
 
   Individual best_individual_;
   
@@ -212,12 +214,11 @@ private:
 
   }
 
-  void Crossover(Mapping& parent_a, Mapping& parent_b, Mapping& offspring_a, Mapping& offspring_b) {
-
+  void Crossover(const Mapping& parent_a, const Mapping& parent_b, Mapping& offspring_a, Mapping& offspring_b) {
+    global_mutex_->lock();
     offspring_a = parent_a;
     offspring_b = parent_b;
-
-    global_mutex_->lock();
+    
     uint64_t level = crossover_rng_->Next().convert_to<uint64_t>() % (parent_a.loop_nest.storage_tiling_boundaries.size() - 1);
     global_mutex_->unlock();
 
@@ -459,6 +460,16 @@ private:
     }
   }
 
+  void RandomIndividual(uint32_t p, Population& population) {
+    while(true) {
+      Mapping mapping;
+      if (!RandomMapping(&mapping)) 
+        continue;
+      if (Evaluate(mapping, population[p]))
+        return;
+    }
+  }
+
   void RandomPopulation(uint32_t p, uint32_t pop_slice_end, Population& population) {
     while (p < pop_slice_end)
     {
@@ -468,6 +479,22 @@ private:
         continue;
       if (Evaluate(mapping, population[p]))
         p++;
+    }
+  }
+
+  uint64_t Tournament() {
+    uint64_t b1 = tour_distribution_(generator);
+    uint64_t b2 = tour_distribution_(generator);
+
+    if (parent_population_[b1].rank < parent_population_[b2].rank) {
+      return b1;
+    } else if (parent_population_[b1].rank == parent_population_[b2].rank) {
+      if (parent_population_[b1].crowding_distance > parent_population_[b2].crowding_distance)
+        return b1;
+      else 
+        return b2;
+    } else {
+      return b2;
     }
   }
 
@@ -516,7 +543,9 @@ private:
       db_rng_(db_rng),
       sp_rng_(sp_rng),
       crossover_rng_(crossover_rng),
-      exp_distribution(3.5)
+      generator(thread_id),
+      exp_distribution(3.5),
+      tour_distribution_(0, population_size_-1)
   {
      best_individual_.fitness = - std::numeric_limits<double>::max();
   }
@@ -563,15 +592,24 @@ private:
       uint64_t debug_cross_count = 0;
       for (uint32_t ep = pop_slice_start; ep < pop_slice_end; ep += 2) {
 
-        Crossover(parent_population_[ep].genome, parent_population_[ep+1].genome, population_[ep].genome, population_[ep+1].genome);
+        Crossover(parent_population_[Tournament()].genome, parent_population_[Tournament()].genome,
+                  population_[ep].genome, population_[ep+1].genome);
+
+        //Crossover(parent_population_[ep].genome, parent_population_[ep+1].genome,
+        //          population_[ep].genome, population_[ep+1].genome);
+
         Mutation(population_[ep]);
         Mutation(population_[ep+1]);
 
         if (Evaluate(population_[ep].genome, population_[ep]))
           debug_cross_count++;
+        else 
+          RandomIndividual(ep, population_);
         
         if (Evaluate(population_[ep+1].genome, population_[ep+1])) 
           debug_cross_count++;
+        else 
+          RandomIndividual(ep, population_);
       }
 
       std::cout << "[T"<< thread_id_ << "] Successfully evaluated " << debug_cross_count << "/" << pop_slice_end - pop_slice_start << " crossed mappings." << std::endl;

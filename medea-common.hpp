@@ -20,7 +20,7 @@ struct Individual {
   model::Engine engine;
   double energy;
   double latency;
-  double rank;
+  uint32_t rank = std::numeric_limits<uint32_t>::max();
   double crowding_distance;
   double fitness; // temp
 };

@@ -51,10 +51,12 @@ class Medea
   //std::default_random_engine rng;
   std::uniform_real_distribution<> proba;
 
+  enum Dominance { DOMINATING, DOMINATED, FRONTIER };
+
  public:
 
-  Medea(config::CompoundConfig* config, std::string out_dir_) :
-    out_dir_(out_dir_),
+  Medea(config::CompoundConfig* config, std::string out_dir) :
+    out_dir_(out_dir),
     rng(rand_dev()),
     proba(0, 1)
   {
@@ -182,19 +184,24 @@ class Medea
     });
 
     // Shuffle
-    std::shuffle(std::begin(parent_population_), std::end(parent_population_), rng);
+    //std::shuffle(std::begin(parent_population_), std::end(parent_population_), rng);
   }
 
-  bool CheckDominance(Individual& a, Individual& b) {
-    return (a.energy <= b.energy && a.latency < b.latency) ||
-           (a.energy < b.energy && a.latency <= b.latency);
+  Dominance CheckDominance(const Individual& a, const Individual& b) {
+    if ( (a.energy <= b.energy && a.latency < b.latency) || (a.energy < b.energy && a.latency <= b.latency) )
+      return Dominance::DOMINATING;
+    
+    if ( (b.energy <= a.energy && b.latency < a.latency) || (b.energy < a.energy && b.latency <= a.latency) )
+      return Dominance::DOMINATED;
+    
+    return Dominance::FRONTIER;
   }
 
   void AssignCrowdingDistance(Population& population, std::vector<uint64_t>& pareto_front) {
     std::sort(pareto_front.begin(), pareto_front.end(), [&](const uint64_t & a, const uint64_t & b) -> bool { return population[a].energy < population[b].energy; });
     
-    population[pareto_front.front()].crowding_distance = std::numeric_limits<double>::max();
-    population[pareto_front.back()].crowding_distance = std::numeric_limits<double>::max();
+    population[pareto_front.front()].crowding_distance = 10e14;
+    population[pareto_front.back()].crowding_distance = 10e14;
 
     double range = population[pareto_front.back()].energy - population[pareto_front.front()].energy;
     assert(range >= 0);
@@ -208,8 +215,8 @@ class Medea
 
     std::sort(pareto_front.begin(), pareto_front.end(), [&](const uint64_t & a, const uint64_t & b) -> bool { return population[a].latency < population[b].latency; });
     
-    population[pareto_front.front()].crowding_distance = std::numeric_limits<double>::max();
-    population[pareto_front.back()].crowding_distance = std::numeric_limits<double>::max();
+    population[pareto_front.front()].crowding_distance = 10e14;
+    population[pareto_front.back()].crowding_distance = 10e14;
 
     range = population[pareto_front.back()].latency - population[pareto_front.front()].latency;
 
@@ -224,42 +231,59 @@ class Medea
 
   void AssignRankAndCrowdingDistance(Population& population) {
     std::vector<uint64_t> pareto_front;
-    std::vector<std::vector<uint64_t>> dominated_by;
+    std::vector<std::vector<uint64_t>> dominated_by(population.size(), std::vector<uint64_t>());
     std::vector<uint64_t> num_dominating(population.size(), 0);
 
     for (uint64_t i = 0; i < population.size(); i++) {
-      std::vector<uint64_t> dominated_ind;
-      for (uint64_t j = 0; j < population.size(); j++) {
-        if (CheckDominance(population[i], population[j]))
-          dominated_ind.push_back(j);
-        else if (i != j)
-          num_dominating[i]++;
+
+      for (uint64_t j = i + 1; j < population.size(); j++) {
+
+        switch ( CheckDominance(population[i], population[j]) ) {
+          case Dominance::DOMINATING:
+            dominated_by[i].push_back(j);
+            num_dominating[j]++;
+            break;
+          case Dominance::DOMINATED:
+            dominated_by[j].push_back(i);
+            num_dominating[i]++;
+            break;
+          case Dominance::FRONTIER:
+            break;
+        }
+
       }
+
       if (num_dominating[i] == 0) {
         population[i].rank = 0;
         pareto_front.push_back(i);
       }
 
-      dominated_by.push_back(dominated_ind);
     }
 
-    uint64_t f = 0;
-    while (!pareto_front.empty()) {
+    uint64_t total_debug = 0;
+    for (uint64_t f = 0; !pareto_front.empty(); f++) {
+      total_debug += pareto_front.size();
+
       AssignCrowdingDistance(population, pareto_front);
 
       std::vector<uint64_t> new_pareto_front;
-      for (auto p : pareto_front) {
-        for (auto q : dominated_by[p]) {
+
+      for (uint64_t p : pareto_front) {
+
+        for (uint64_t q : dominated_by[p]) {
+
           num_dominating[q]--;
+
           if (num_dominating[q] == 0) {
-            population[q].rank = f+1;
+            population[q].rank = f + 1;
             new_pareto_front.push_back(q);
           }
+
         }
       }
-      f++;
       pareto_front = new_pareto_front;
     }
+    std::cout << "TDB: " << total_debug << " POS: " << population.size() << std::endl;
   }
 
   void Merging() {
@@ -276,7 +300,7 @@ class Medea
     std::copy(
       immigrant_population_.begin(),
       immigrant_population_.end(),
-      merged_population_.begin()+population_size_
+      merged_population_.begin()+2*population_size_
     );
   }
 
@@ -332,6 +356,12 @@ class Medea
 
     AssignRankAndCrowdingDistance(parent_population_);
 
+    std::ofstream init_population_file(out_dir_ + "/" + out_prefix_ + ".initial_population.txt");
+    for (Individual& ind : parent_population_) {
+      init_population_file <<  ind.rank << "," << ind.crowding_distance << "," << ind.energy << "," << ind.latency << std::endl;
+    }
+    init_population_file.close();
+
     thread_orchestrator_->LeaderDone();
 
     for (uint32_t g = 0; g < num_generations_; g++) {
@@ -342,7 +372,16 @@ class Medea
       // Select for next generation
       Merging();
       AssignRankAndCrowdingDistance(merged_population_);
+      std::cout << "[RANKS] ";
+      for (Individual& ind : merged_population_) std::cout << ind.rank;
+      std::cout << std::endl;
       Survival();
+      std::cout << "[RANKS] ";
+      for (Individual& ind : parent_population_) {
+        std::cout << ind.rank;
+      }
+      std::cout << std::endl;
+      
 
       double mean = 0.0;
       for (auto& i : parent_population_) mean += i.fitness;
@@ -375,6 +414,12 @@ class Medea
                 << best_individual_.engine.Utilization() << " | pJ/MACC = " << std::setw(8)
                 << std::fixed << std::setprecision(3) << best_individual_.engine.Energy() /
         best_individual_.engine.GetTopology().MACCs() << std::endl;
+
+      std::ofstream population_file(out_dir_ + "/" + out_prefix_ + ".population.txt");
+      for (Individual& ind : parent_population_) {
+        population_file <<  ind.rank << "," << ind.crowding_distance << "," << ind.energy << "," << ind.latency << std::endl;
+      }
+      population_file.close();
     }
     else
     {
