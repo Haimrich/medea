@@ -304,6 +304,13 @@ class Medea
     );
   }
 
+  void PrintGeneration(std::ofstream& out, Population& pop, uint64_t gen_id) {
+    out << "GEN " << gen_id << std::endl;
+
+    for (Individual& ind : pop) 
+      out <<  ind.rank << "," << ind.crowding_distance << "," << ind.energy << "," << ind.latency << std::endl;
+  }
+
   // ---------------
   // Run the mapper.
   // ---------------
@@ -312,6 +319,7 @@ class Medea
     // Output file names.
     const std::string stats_file_name = out_dir_ + "/" + out_prefix_ + ".stats.txt";
     const std::string map_txt_file_name = out_dir_ + "/" + out_prefix_ + ".map.txt";
+    const std::string pop_txt_file_name = out_dir_ + "/" + out_prefix_ + ".populations.txt";
 
     // =====
     // Thread Start.
@@ -356,13 +364,9 @@ class Medea
 
     AssignRankAndCrowdingDistance(parent_population_);
 
-    std::ofstream init_population_file(out_dir_ + "/" + out_prefix_ + ".initial_population.txt");
-    for (Individual& ind : parent_population_) {
-      init_population_file <<  ind.rank << "," << ind.crowding_distance << "," << ind.energy << "," << ind.latency << std::endl;
-    }
-    init_population_file.close();
-
     thread_orchestrator_->LeaderDone();
+
+    std::ofstream population_file(pop_txt_file_name);
 
     for (uint32_t g = 0; g < num_generations_; g++) {
       
@@ -372,10 +376,8 @@ class Medea
       // Select for next generation
       Merging();
       AssignRankAndCrowdingDistance(merged_population_);
-      std::cout << "[RANKS] ";
-      for (Individual& ind : merged_population_) std::cout << ind.rank;
-      std::cout << std::endl;
       Survival();
+
       std::cout << "[RANKS] ";
       for (Individual& ind : parent_population_) {
         std::cout << ind.rank;
@@ -388,14 +390,15 @@ class Medea
       mean /= population_size_;
       std::cout << "[INFO] Generation " << g << " done. Average Fitness: " << mean << std::endl;
 
+      PrintGeneration(population_file, parent_population_, g);
       thread_orchestrator_->LeaderDone();
     }
-
 
     // ============
     // Termination.
     // ============
 
+    population_file.close();
     
     if (best_individual_.engine.IsEvaluated())
     {
@@ -414,12 +417,6 @@ class Medea
                 << best_individual_.engine.Utilization() << " | pJ/MACC = " << std::setw(8)
                 << std::fixed << std::setprecision(3) << best_individual_.engine.Energy() /
         best_individual_.engine.GetTopology().MACCs() << std::endl;
-
-      std::ofstream population_file(out_dir_ + "/" + out_prefix_ + ".population.txt");
-      for (Individual& ind : parent_population_) {
-        population_file <<  ind.rank << "," << ind.crowding_distance << "," << ind.energy << "," << ind.latency << std::endl;
-      }
-      population_file.close();
     }
     else
     {

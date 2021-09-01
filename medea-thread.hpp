@@ -156,13 +156,21 @@ private:
     return factor;
   }
 
-  void FactorCompensation(const problem::Shape::DimensionID& dim, const uint64_t old_factor, const uint64_t new_factor, const uint64_t level, loop::Nest& nest) {
+  uint64_t GetStrideAtLevel(problem::Shape::DimensionID dimension, std::vector<loop::Descriptor>& subnest) {
+    for (auto &l : subnest) 
+      if (l.dimension == dimension)
+        return l.stride;
+    
+    return 1;
+  }
+
+  void FactorCompensation(const problem::Shape::DimensionID& dim, const uint64_t stride, const uint64_t old_factor, const uint64_t new_factor, const uint64_t level, loop::Nest& nest) {
     
     if (new_factor < old_factor) {
         // Prima passare da old_factor a 1 poi da 1 a new_factor -> ricorsivo
         if (old_factor % new_factor) {
-          FactorCompensation(dim, old_factor, 1, level, nest);
-          FactorCompensation(dim, 1, new_factor, level, nest);
+          FactorCompensation(dim, stride, old_factor, 1, level, nest);
+          FactorCompensation(dim, stride, 1, new_factor, level, nest);
           return;
         }
         
@@ -177,7 +185,7 @@ private:
         if (ram_loop != nest.loops.end()) {
           ram_loop->end *= factor;
         } else {
-          loop::Descriptor new_loop(dim, factor);
+          loop::Descriptor new_loop(dim, 0, factor, stride, spacetime::Dimension::Time);
           nest.loops.push_back(new_loop);
           nest.storage_tiling_boundaries.back()++;
         }
@@ -186,8 +194,8 @@ private:
       } else if (new_factor > old_factor) {
         // Fattore aumentato -> Compensiamo diminuendo in RAM o nel primo che troviamo a scendere
         if (new_factor % old_factor) {
-          FactorCompensation(dim, old_factor, 1, level, nest);
-          FactorCompensation(dim, 1, new_factor, level, nest);
+          FactorCompensation(dim, stride, old_factor, 1, level, nest);
+          FactorCompensation(dim, stride, 1, new_factor, level, nest);
           return;
         }
 
@@ -239,9 +247,11 @@ private:
 
       uint64_t factor_a = GetDimensionAtLevel(dimension, a_level);
       uint64_t factor_b = GetDimensionAtLevel(dimension, b_level);
+      uint64_t stride_a = GetStrideAtLevel(dimension, a_level);
+      uint64_t stride_b = GetStrideAtLevel(dimension, b_level);
 
-      FactorCompensation(dimension, factor_a, factor_b, level, offspring_a.loop_nest);
-      FactorCompensation(dimension, factor_b, factor_a, level, offspring_b.loop_nest);
+      FactorCompensation(dimension, stride_a, factor_a, factor_b, level, offspring_a.loop_nest);
+      FactorCompensation(dimension, stride_b, factor_b, factor_a, level, offspring_b.loop_nest);
     }
 
     a_start = level > 0 ? parent_a.loop_nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
@@ -350,7 +360,7 @@ private:
           continue;
         s.end = new_factor ;
 
-        FactorCompensation(s.dimension, old_factor, s.end, level, mapping.loop_nest); 
+        FactorCompensation(s.dimension, s.stride, old_factor, s.end, level, mapping.loop_nest); 
       }
 
 
@@ -420,7 +430,7 @@ private:
       uint64_t old_factor = l->end;
       l->end *= factor_div;
 
-      FactorCompensation(l->dimension, old_factor, l->end, level, mapping.loop_nest);
+      FactorCompensation(l->dimension, l->stride, old_factor, l->end, level, mapping.loop_nest);
       std::cout << "Fill Mutation" << std::endl;
     }
 
@@ -593,10 +603,8 @@ private:
       for (uint32_t ep = pop_slice_start; ep < pop_slice_end; ep += 2) {
 
         Crossover(parent_population_[Tournament()].genome, parent_population_[Tournament()].genome,
-                  population_[ep].genome, population_[ep+1].genome);
-
         //Crossover(parent_population_[ep].genome, parent_population_[ep+1].genome,
-        //          population_[ep].genome, population_[ep+1].genome);
+                  population_[ep].genome, population_[ep+1].genome);
 
         Mutation(population_[ep]);
         Mutation(population_[ep+1]);
