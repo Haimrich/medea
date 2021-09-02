@@ -38,7 +38,6 @@ class MedeaThread
 public:
   
 private:
-  // Configuration information sent from main thread.
   unsigned thread_id_;
 
   problem::Workload &workload_;
@@ -58,16 +57,17 @@ private:
   uint32_t population_size_;
   uint32_t immigrant_population_size_;
   uint32_t num_generations_;
-  uint32_t mutation_prob_ = 50;
+
+  double fill_mutation_prob_, parallel_mutation_prob_, random_mutation_prob_;
+  bool use_tournament_;
 
   std::thread thread_;
 
   RandomGenerator128 *if_rng_, *lp_rng_, *db_rng_, *sp_rng_, *crossover_rng_;
-  std::default_random_engine generator;
-  std::exponential_distribution<double> exp_distribution;
-  std::uniform_real_distribution<double> uni_distribution;
+  std::default_random_engine rng_;
+  std::exponential_distribution<double> exp_distribution_;
+  std::uniform_real_distribution<double> uni_distribution_;
   std::uniform_int_distribution<uint64_t> tour_distribution_;
-
 
   Individual best_individual_;
   
@@ -162,6 +162,15 @@ private:
         return l.stride;
     
     return 1;
+  }
+
+  std::vector<loop::Descriptor> GetNestAtLevel(const Mapping& mapping, unsigned level) {
+    loop::Nest nest = mapping.loop_nest;
+    uint64_t start = level > 0 ? nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
+    uint64_t end = nest.storage_tiling_boundaries.at(level) + 1;
+    std::vector<loop::Descriptor> level_nest(nest.loops.begin() + start, nest.loops.begin() + end); 
+    
+    return level_nest;
   }
 
   void FactorCompensation(const problem::Shape::DimensionID& dim, const uint64_t stride, const uint64_t old_factor, const uint64_t new_factor, const uint64_t level, loop::Nest& nest) {
@@ -294,11 +303,6 @@ private:
   }
 
   void FanoutMutation(Mapping& mapping) {
-    global_mutex_->lock();
-    uint64_t dice = (crossover_rng_->Next().convert_to<uint64_t>() + 1) % 100;
-    global_mutex_->unlock();
-    if (dice > mutation_prob_) return;
-
     // Set spatial loops bounds to maximum possible
     for (uint32_t level = 0; level < mapping.loop_nest.storage_tiling_boundaries.size(); level++) {
       //if (arch_props_.Fanout(level) > 1) {
@@ -374,8 +378,7 @@ private:
 
   // Fill buffer at lower levels - Funziona solo con quelli che contengono un solo datatype per ora forse
   void FillMutation(model::Engine& engine, Mapping& mapping) {
-    if (!engine.IsEvaluated()) return;
-    unsigned level = unsigned((arch_props_.StorageLevels()-1) * exp_distribution(generator));
+    unsigned level = unsigned((arch_props_.StorageLevels()-1) * exp_distribution_(rng_));
     level = (level == arch_props_.StorageLevels()-1) ? arch_props_.StorageLevels() - 2 : level;
 
     // Vedere bypass
@@ -442,14 +445,86 @@ private:
  
   }
 
-  void Mutation(Individual& individual) {
-    FanoutMutation(individual.genome);
+  void RandomMutation(Mapping& mapping) {
+    // Random loop factor swapping
+    if (uni_distribution_(rng_) < 0.5) {
 
-    // FIX sta roba
-    global_mutex_->lock();
-    uint64_t dice = (crossover_rng_->Next().convert_to<uint64_t>() + 1) % 100;
-    global_mutex_->unlock();
-    if (dice > 70) FillMutation(individual.engine, individual.genome);
+      unsigned num_levels = mapping.loop_nest.storage_tiling_boundaries.size() - 1;
+      unsigned level_a = unsigned( num_levels * uni_distribution_(rng_) );
+      unsigned level_b = unsigned( num_levels * uni_distribution_(rng_) );
+      if (level_a == level_b) return;
+
+      auto level_a_nest = GetNestAtLevel(mapping, level_a);
+      unsigned loop_a = unsigned( level_a_nest.size() * uni_distribution_(rng_) );
+
+      auto level_b_nest = GetNestAtLevel(mapping, level_b);
+      unsigned loop_b = unsigned( level_b_nest.size() * uni_distribution_(rng_) );
+
+      auto dim_a = level_a_nest.at(loop_a).dimension;
+      int id_same_dim_in_b = -1;
+      for (unsigned l = 0; l < level_b_nest.size(); l++) 
+        if (level_b_nest[l].dimension == dim_a && level_b_nest[l].spacetime_dimension == spacetime::Dimension::Time)
+          id_same_dim_in_b = l;
+
+      auto dim_b = level_b_nest.at(loop_b).dimension;
+      int id_same_dim_in_a = -1;
+      for (unsigned l = 0; l < level_a_nest.size(); l++) 
+        if (level_a_nest[l].dimension == dim_b && level_a_nest[l].spacetime_dimension == spacetime::Dimension::Time)
+          id_same_dim_in_a = l;
+
+      unsigned start_a = level_a > 0 ? mapping.loop_nest.storage_tiling_boundaries.at(level_a-1) + 1 : 0;
+      mapping.loop_nest.loops.at(start_a+loop_a).end = 1;
+
+      if (id_same_dim_in_a >= 0) {
+        mapping.loop_nest.loops.at(start_a+id_same_dim_in_a).end *= level_b_nest[loop_b].end;
+      } else {
+        mapping.loop_nest.loops.insert(mapping.loop_nest.loops.begin() + start_a + level_a_nest.size() - 1, level_b_nest[loop_b]);
+
+        for (unsigned i = level_a; i < mapping.loop_nest.storage_tiling_boundaries.size(); i++)
+          mapping.loop_nest.storage_tiling_boundaries[i] +=  1;
+
+      }
+
+      unsigned start_b = level_b > 0 ? mapping.loop_nest.storage_tiling_boundaries.at(level_b-1) + 1 : 0;
+      mapping.loop_nest.loops.at(start_b+loop_b).end = 1;
+      
+      if (id_same_dim_in_b >= 0) {
+        mapping.loop_nest.loops.at(start_b+id_same_dim_in_b).end *= level_a_nest[loop_a].end;
+      } else {
+        mapping.loop_nest.loops.insert(mapping.loop_nest.loops.begin() + start_b + level_b_nest.size() - 1, level_a_nest[loop_a]);
+
+        for (unsigned i = level_b; i < mapping.loop_nest.storage_tiling_boundaries.size(); i++)
+          mapping.loop_nest.storage_tiling_boundaries[i] +=  1;
+      }
+
+    // Random loop permutation
+    } else {
+      
+      unsigned num_levels = mapping.loop_nest.storage_tiling_boundaries.size();
+      unsigned level = unsigned( num_levels * uni_distribution_(rng_) );
+      assert(level < num_levels);
+      
+      unsigned start = level > 0 ? mapping.loop_nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
+      auto level_nest = GetNestAtLevel(mapping, level);
+      unsigned loop_a = start + unsigned( level_nest.size() * uni_distribution_(rng_) );
+      unsigned loop_b = start + unsigned( level_nest.size() * uni_distribution_(rng_) );
+
+      if (loop_a != loop_b &&
+          mapping.loop_nest.loops.at(loop_a).spacetime_dimension == spacetime::Dimension::Time &&
+          mapping.loop_nest.loops.at(loop_b).spacetime_dimension == spacetime::Dimension::Time)
+        std::swap(mapping.loop_nest.loops.at(loop_a), mapping.loop_nest.loops.at(loop_b));
+    }
+  }
+
+  void Mutation(Individual& individual) {
+    if (uni_distribution_(rng_) < fill_mutation_prob_ && individual.engine.IsEvaluated())
+      FillMutation(individual.engine, individual.genome);
+
+    if (uni_distribution_(rng_) < parallel_mutation_prob_)
+      FanoutMutation(individual.genome);
+
+    if (uni_distribution_(rng_) < random_mutation_prob_)
+      RandomMutation(individual.genome);
   }
 
   void UpdateBestMapping() {
@@ -493,8 +568,8 @@ private:
   }
 
   uint64_t Tournament() {
-    uint64_t b1 = tour_distribution_(generator);
-    uint64_t b2 = tour_distribution_(generator);
+    uint64_t b1 = tour_distribution_(rng_);
+    uint64_t b2 = tour_distribution_(rng_);
 
     if (parent_population_[b1].rank < parent_population_[b2].rank) {
       return b1;
@@ -525,6 +600,10 @@ private:
     uint32_t population_size,
     uint32_t immigrant_population_size,
     uint32_t generations,
+    double fill_mutation_prob,
+    double parallel_mutation_prob,
+    double random_mutation_prob,
+    bool use_tournament,
     RandomGenerator128* if_rng,
     RandomGenerator128* lp_rng,
     RandomGenerator128* db_rng,
@@ -547,14 +626,19 @@ private:
       population_size_(population_size),
       immigrant_population_size_(immigrant_population_size),
       num_generations_(generations),
+      fill_mutation_prob_(fill_mutation_prob),
+      parallel_mutation_prob_(parallel_mutation_prob),
+      random_mutation_prob_(random_mutation_prob),
+      use_tournament_(use_tournament),
       thread_(),
       if_rng_(if_rng),
       lp_rng_(lp_rng),
       db_rng_(db_rng),
       sp_rng_(sp_rng),
       crossover_rng_(crossover_rng),
-      generator(thread_id),
-      exp_distribution(3.5),
+      rng_(thread_id),
+      exp_distribution_(3.5),
+      uni_distribution_(0, 1),
       tour_distribution_(0, population_size_-1)
   {
      best_individual_.fitness = - std::numeric_limits<double>::max();
@@ -601,10 +685,14 @@ private:
     for (uint32_t g = 0; g < num_generations_; g++) {
       uint64_t debug_cross_count = 0;
       for (uint32_t ep = pop_slice_start; ep < pop_slice_end; ep += 2) {
-
-        Crossover(parent_population_[Tournament()].genome, parent_population_[Tournament()].genome,
-        //Crossover(parent_population_[ep].genome, parent_population_[ep+1].genome,
-                  population_[ep].genome, population_[ep+1].genome);
+        
+        if (use_tournament_)
+          Crossover(parent_population_[Tournament()].genome, parent_population_[Tournament()].genome,
+                    population_[ep].genome, population_[ep+1].genome);
+        else
+          Crossover(parent_population_[ep].genome, parent_population_[ep+1].genome,
+                    population_[ep].genome, population_[ep+1].genome);
+                  
 
         Mutation(population_[ep]);
         Mutation(population_[ep+1]);

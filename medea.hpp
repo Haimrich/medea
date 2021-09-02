@@ -37,6 +37,9 @@ class Medea
 
   Population population_, parent_population_, immigrant_population_, merged_population_;
 
+  double fill_mutation_prob_, parallel_mutation_prob_, random_mutation_prob_;
+  bool use_tournament_;
+
   Orchestrator* thread_orchestrator_;
   std::mutex best_mutex_;
 
@@ -140,6 +143,18 @@ class Medea
 
     std::cout << "Num. generations: " << num_generations_ << " - Pop. size: " << population_size_ << " - Immigrant pop. size: " << immigrant_population_size_ << std::endl;
   
+    fill_mutation_prob_ = 0.3;
+    mapper.lookupValue("fill-mutation-prob", fill_mutation_prob_);
+    parallel_mutation_prob_ = 0.5;
+    mapper.lookupValue("parallel-mutation-prob", parallel_mutation_prob_);
+    random_mutation_prob_ = 0.5;
+    mapper.lookupValue("random-mutation-prob", random_mutation_prob_);
+    use_tournament_ = false;
+    mapper.lookupValue("use-tournament", use_tournament_);
+
+    std::cout <<  std::setprecision(3) << "Fill Mut. Prob.: " << fill_mutation_prob_ << " - Parallel Mut. Prob.: " << parallel_mutation_prob_ << " - Random Mut. Prob.: " << random_mutation_prob_ << " - Using tournament: " << use_tournament_ << std::endl;
+  
+
     num_threads_ = std::thread::hardware_concurrency();
     if (mapper.lookupValue("num-threads", num_threads_))
       std::cout << "Using threads = " << num_threads_ << std::endl;
@@ -184,7 +199,8 @@ class Medea
     });
 
     // Shuffle
-    //std::shuffle(std::begin(parent_population_), std::end(parent_population_), rng);
+    if (!use_tournament_)
+      std::shuffle(std::begin(parent_population_), std::end(parent_population_), rng);
   }
 
   Dominance CheckDominance(const Individual& a, const Individual& b) {
@@ -198,7 +214,7 @@ class Medea
   }
 
   void AssignCrowdingDistance(Population& population, std::vector<uint64_t>& pareto_front) {
-    std::sort(pareto_front.begin(), pareto_front.end(), [&](const uint64_t & a, const uint64_t & b) -> bool { return population[a].energy < population[b].energy; });
+    std::sort(pareto_front.begin(), pareto_front.end(), [&](const uint64_t a, const uint64_t b) -> bool { return population[a].energy < population[b].energy; });
     
     population[pareto_front.front()].crowding_distance = 10e14;
     population[pareto_front.back()].crowding_distance = 10e14;
@@ -213,7 +229,7 @@ class Medea
       population[r_this].crowding_distance = std::abs(population[r_next].energy - population[r_prev].energy) / range;
     }
 
-    std::sort(pareto_front.begin(), pareto_front.end(), [&](const uint64_t & a, const uint64_t & b) -> bool { return population[a].latency < population[b].latency; });
+    std::sort(pareto_front.begin(), pareto_front.end(), [&](const uint64_t a, const uint64_t b) -> bool { return population[a].latency < population[b].latency; });
     
     population[pareto_front.front()].crowding_distance = 10e14;
     population[pareto_front.back()].crowding_distance = 10e14;
@@ -283,7 +299,6 @@ class Medea
       }
       pareto_front = new_pareto_front;
     }
-    std::cout << "TDB: " << total_debug << " POS: " << population.size() << std::endl;
   }
 
   void Merging() {
@@ -345,6 +360,10 @@ class Medea
           population_size_,
           immigrant_population_size_,
           num_generations_,
+          fill_mutation_prob_,
+          parallel_mutation_prob_,
+          random_mutation_prob_,
+          use_tournament_,
           if_rng_,
           lp_rng_,
           db_rng_,
@@ -380,7 +399,14 @@ class Medea
 
       std::cout << "[RANKS] ";
       for (Individual& ind : parent_population_) {
-        std::cout << ind.rank;
+        if (ind.rank < 10)
+          std::cout << ind.rank;
+        else if (ind.rank < 36)
+          std::cout << (char)(ind.rank+55);
+        else if (ind.rank < 61)
+          std::cout << (char)(ind.rank+61);
+        else 
+          std::cout << "+";
       }
       std::cout << std::endl;
       
