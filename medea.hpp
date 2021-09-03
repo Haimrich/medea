@@ -25,6 +25,7 @@ class Medea
 
   problem::Workload workload_;
   model::Engine::Specs arch_specs_;
+  config::CompoundConfigNode arch_config_;
   mapspace::MapSpace* mapspace_;
   mapping::Constraints* constraints_;
 
@@ -71,13 +72,12 @@ class Medea
     std::cout << "Problem configuration complete." << std::endl;
 
     // Architecture configuration.
-    config::CompoundConfigNode arch;
-    arch = rootNode.lookup("architecture");
-    arch_specs_ = model::Engine::ParseSpecs(arch);
+    arch_config_ = rootNode.lookup("architecture");
+    arch_specs_ = model::Engine::ParseSpecs(arch_config_);
 
 #ifdef USE_ACCELERGY
     // Call accelergy ERT with all input files
-    if (arch.exists("subtree") || arch.exists("local")) {
+    if (arch_config_.exists("subtree") || arch_config_.exists("local")) {
       accelergy::invokeAccelergy(config->inFiles, out_prefix_, out_dir_);
       std::string ertPath = out_prefix_ + ".ERT.yaml";
       auto ertConfig = new config::CompoundConfig(ertPath.c_str());
@@ -99,8 +99,8 @@ class Medea
     config::CompoundConfigNode mapspace;
 
    // Architecture constraints.
-    if (arch.exists("constraints"))
-      arch_constraints = arch.lookup("constraints");
+    if (arch_config_.exists("constraints"))
+      arch_constraints = arch_config_.lookup("constraints");
     else if (rootNode.exists("arch_constraints"))
       arch_constraints = rootNode.lookup("arch_constraints");
     else if (rootNode.exists("architecture_constraints"))
@@ -348,6 +348,7 @@ class Medea
           t, 
           workload_,
           arch_specs_,
+          arch_config_,
           mapspace_,
           constraints_,
           &best_individual_,

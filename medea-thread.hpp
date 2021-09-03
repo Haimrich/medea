@@ -42,6 +42,7 @@ private:
 
   problem::Workload &workload_;
   model::Engine::Specs arch_specs_;
+  config::CompoundConfigNode arch_config_;
   ArchProperties arch_props_;
   mapspace::MapSpace* mapspace_;
   mapping::Constraints* constraints_;
@@ -111,27 +112,20 @@ private:
                                   { return cur && status.success; });
   }
 
+
   bool Evaluate(Mapping mapping, Individual& individual) {
     model::Engine engine;
     engine.Spec(arch_specs_);
     
     // Lightweight pre-eval
     auto status_per_level = engine.PreEvaluationCheck(mapping, workload_);
-    if (!EngineSuccess(status_per_level)) {
-      individual.energy = std::numeric_limits<double>::max();
-      individual.latency = std::numeric_limits<double>::max();
-      individual.engine = engine;
+    if (!EngineSuccess(status_per_level))
       return false;
-    }
 
     // Heavyweight evaluation
     status_per_level = engine.Evaluate(mapping, workload_);
-    if (!EngineSuccess(status_per_level)) {
-      individual.energy = std::numeric_limits<double>::max();
-      individual.latency = std::numeric_limits<double>::max();
-      individual.engine = engine;
+    if (!EngineSuccess(status_per_level)) 
       return false;
-    }
 
     // Population update
     individual.genome = mapping;
@@ -404,6 +398,8 @@ private:
     uint64_t end = mapping.loop_nest.storage_tiling_boundaries.at(level) + 1;
     
     for (auto l = mapping.loop_nest.loops.begin() + start; l != mapping.loop_nest.loops.begin() + end; l++) {
+      if (l->spacetime_dimension != spacetime::Dimension::Time) continue;
+
       // Verificare se dimensione appartiene a daataspace
       bool is_proj = false;
       for (auto& proj : problem::GetShape()->Projections[datatype])
@@ -459,6 +455,10 @@ private:
 
       auto level_b_nest = GetNestAtLevel(mapping, level_b);
       unsigned loop_b = unsigned( level_b_nest.size() * uni_distribution_(rng_) );
+
+      if (level_a_nest[loop_a].spacetime_dimension != spacetime::Dimension::Time ||
+          level_b_nest[loop_b].spacetime_dimension != spacetime::Dimension::Time ) 
+        return;
 
       auto dim_a = level_a_nest.at(loop_a).dimension;
       int id_same_dim_in_b = -1;
@@ -588,6 +588,7 @@ private:
     unsigned thread_id,
     problem::Workload &workload,
     model::Engine::Specs arch_specs,
+    config::CompoundConfigNode arch_config,
     mapspace::MapSpace* mapspace,
     mapping::Constraints* constraints,
     Individual* best_individual,
@@ -613,6 +614,7 @@ private:
       thread_id_(thread_id),
       workload_(workload),
       arch_specs_(arch_specs),
+      arch_config_(arch_config),
       arch_props_(arch_specs),
       mapspace_(mapspace),
       constraints_(constraints),
@@ -697,10 +699,14 @@ private:
         Mutation(population_[ep]);
         Mutation(population_[ep+1]);
 
+        std::cout << population_[ep].genome.PrintCompact() << std::endl;
+
         if (Evaluate(population_[ep].genome, population_[ep]))
           debug_cross_count++;
         else 
           RandomIndividual(ep, population_);
+
+        std::cout << population_[ep+1].genome.PrintCompact() << std::endl;
         
         if (Evaluate(population_[ep+1].genome, population_[ep+1])) 
           debug_cross_count++;
