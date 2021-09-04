@@ -5,12 +5,14 @@
 #include <random>
 #include <thread>
 #include <algorithm>
+#include <fstream>
 
 
 #include "model/engine.hpp"
 #include "model/topology.hpp"
 #include "mapping/arch-properties.hpp"
 #include "mapspaces/mapspace-factory.hpp"
+#include "util/accelergy_interface.hpp"
 
 
 namespace medea {

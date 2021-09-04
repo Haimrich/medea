@@ -28,6 +28,7 @@
 #pragma once
 
 #include "applications/medea/medea-common.hpp"
+#include "applications/medea/medea-accelergy.hpp"
 
 extern bool gTerminate;
 
@@ -39,6 +40,9 @@ public:
   
 private:
   unsigned thread_id_;
+
+  config::CompoundConfig* config_;
+  std::string out_dir_;
 
   problem::Workload &workload_;
   model::Engine::Specs arch_specs_;
@@ -112,6 +116,59 @@ private:
                                   { return cur && status.success; });
   }
 
+  void UpdateArchitecture(model::Engine& engine) {
+    // Update area and revaluate sigh
+    
+    //YAML::Node root_node = arch_config_.getYNode();
+    std::map<std::string, uint64_t> updates;
+    
+    
+    auto new_specs = model::Topology::Specs(arch_specs_.topology);
+    for (unsigned i = 0; i < arch_specs_.topology.NumStorageLevels(); i++) {
+      auto buffer = new_specs.GetStorageLevel(i);
+
+      auto tile_sizes = engine.GetTopology().GetStats().tile_sizes.at(i);
+      auto utilized_capacity = std::accumulate(tile_sizes.begin(), tile_sizes.end(), 0);
+
+      if (!buffer->block_size.IsSpecified()) continue;
+      auto block_size = buffer->block_size.Get();
+
+      if (!buffer->size.IsSpecified()) continue;
+      //std::cout << "[UPD] Level: " << buffer->name << " - Old Size: " << buffer->size;
+      buffer->size = ((utilized_capacity / block_size) + 1) * block_size;
+      buffer->effective_size = static_cast<uint64_t>(std::floor(buffer->size.Get() / buffer->multiple_buffering.Get()));
+      //std::cout << " - New size: " << buffer->size << std::endl;
+
+      updates[buffer->name.Get()] = (utilized_capacity / block_size) + 1;
+    }
+
+    std::string out_prefix = "medea." + std::to_string(thread_id_) + "_tmp";
+    auto art = getARTfromAccelergy(config_, updates, out_prefix);
+   
+    model::Engine::Specs new_engine_specs;
+    new_engine_specs.topology = new_specs;
+    new_engine_specs.topology.ParseAccelergyART(art);
+    engine.Spec(new_engine_specs);
+ 
+      /*
+      YAML::Node node = root_node;
+      while (node["subtree"]) {
+        node = node["subtree"][0];
+        auto local_node = node["local"];
+
+        if (local_node) 
+          for (auto&& buffer : local_node) 
+            if (buffer["name"]) {
+              auto buffer_name = buffer["name"].as<std::string>();
+              if (buffer_name.compare(0, storage_name.size(), storage_name) == 0 && buffer["attributes"])
+                if (buffer["attributes"]["depth"])
+                  buffer["attributes"]["depth"] = 
+            }
+          
+      }
+      */
+    
+  }
 
   bool Evaluate(Mapping mapping, Individual& individual) {
     model::Engine engine;
@@ -126,6 +183,11 @@ private:
     status_per_level = engine.Evaluate(mapping, workload_);
     if (!EngineSuccess(status_per_level)) 
       return false;
+
+    // Update storage capacities based on mappping -> update area
+    UpdateArchitecture(engine);
+    status_per_level = engine.Evaluate(mapping, workload_);
+    assert( EngineSuccess(status_per_level) );
 
     // Population update
     individual.genome = mapping;
@@ -586,6 +648,8 @@ private:
  public:
   MedeaThread(
     unsigned thread_id,
+    config::CompoundConfig* config,
+    std::string out_dir,
     problem::Workload &workload,
     model::Engine::Specs arch_specs,
     config::CompoundConfigNode arch_config,
@@ -612,6 +676,8 @@ private:
     RandomGenerator128* crossover_rng
     ) :
       thread_id_(thread_id),
+      config_(config),
+      out_dir_(out_dir),
       workload_(workload),
       arch_specs_(arch_specs),
       arch_config_(arch_config),

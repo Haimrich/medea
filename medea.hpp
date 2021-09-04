@@ -3,11 +3,9 @@
 #include "applications/medea/medea-common.hpp"
 #include "applications/medea/medea-thread.hpp"
 
-#include <fstream>
 #include <iomanip>
 #include <cmath> 
 
-#include "util/accelergy_interface.hpp"
 #include "compound-config/compound-config.hpp"
 #include "util/numeric.hpp"
 
@@ -23,6 +21,7 @@ class Medea
 {
  protected:
 
+  config::CompoundConfig* config_;
   problem::Workload workload_;
   model::Engine::Specs arch_specs_;
   config::CompoundConfigNode arch_config_;
@@ -60,6 +59,7 @@ class Medea
  public:
 
   Medea(config::CompoundConfig* config, std::string out_dir) :
+    config_(config),
     out_dir_(out_dir),
     rng(rand_dev()),
     proba(0, 1)
@@ -346,6 +346,8 @@ class Medea
       threads_.push_back(
         new MedeaThread(
           t, 
+          config_,
+          out_dir_,
           workload_,
           arch_specs_,
           arch_config_,
