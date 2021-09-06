@@ -195,7 +195,7 @@ class Medea
       merged_population_.begin(), merged_population_.end(),
       parent_population_.begin(), parent_population_.end(),
       [&](const Individual & a, const Individual & b) -> bool { 
-        return a.rank < b.rank || (a.rank == b.rank && a.crowding_distance > b.crowding_distance); 
+        return a.rank < b.rank || (a.rank == b.rank && a.crowding_distance > b.crowding_distance);
     });
 
     // Shuffle
@@ -204,43 +204,50 @@ class Medea
   }
 
   Dominance CheckDominance(const Individual& a, const Individual& b) {
-    if ( (a.energy <= b.energy && a.latency < b.latency) || (a.energy < b.energy && a.latency <= b.latency) )
+    bool all_a_less_or_equal_than_b = true;
+    bool any_a_less_than_b = false;
+    bool all_b_less_or_equal_than_a = true;
+    bool any_b_less_than_a = false;
+
+    for (unsigned i = 0; i < std::tuple_size<decltype(Individual::objectives)>::value; i++) {
+      if (a.objectives[i] > b.objectives[i]) {
+        all_a_less_or_equal_than_b = false;
+        any_b_less_than_a = true;
+      } else if (b.objectives[i] > a.objectives[i]) {
+        any_a_less_than_b = true;
+        all_b_less_or_equal_than_a = false;
+      }
+    }
+
+    if (all_a_less_or_equal_than_b && any_a_less_than_b) 
       return Dominance::DOMINATING;
-    
-    if ( (b.energy <= a.energy && b.latency < a.latency) || (b.energy < a.energy && b.latency <= a.latency) )
+    if (all_b_less_or_equal_than_a && any_b_less_than_a) 
       return Dominance::DOMINATED;
-    
+
     return Dominance::FRONTIER;
   }
 
   void AssignCrowdingDistance(Population& population, std::vector<uint64_t>& pareto_front) {
-    std::sort(pareto_front.begin(), pareto_front.end(), [&](const uint64_t a, const uint64_t b) -> bool { return population[a].energy < population[b].energy; });
-    
-    population[pareto_front.front()].crowding_distance = 10e14;
-    population[pareto_front.back()].crowding_distance = 10e14;
+    for (auto p : pareto_front)
+      population[p].crowding_distance = 0.0;
 
-    double range = population[pareto_front.back()].energy - population[pareto_front.front()].energy;
-    assert(range >= 0);
+    for (unsigned i = 0; i < std::tuple_size<decltype(Individual::objectives)>::value; i++) {
+      std::sort(pareto_front.begin(), pareto_front.end(), [&](const uint64_t a, const uint64_t b) -> bool { 
+        return population[a].objectives[i] < population[b].objectives[i]; 
+      });
 
-    for (uint64_t i = 1; i < pareto_front.size() - 1; i++) {
-      uint64_t r_prev = pareto_front[i-1];
-      uint64_t r_next = pareto_front[i+1];
-      uint64_t r_this = pareto_front[i];
-      population[r_this].crowding_distance = std::abs(population[r_next].energy - population[r_prev].energy) / range;
-    }
+      population[pareto_front.front()].crowding_distance = 10e14;
+      population[pareto_front.back()].crowding_distance = 10e14;
+      
+      double range = population[pareto_front.back()].objectives[i] - population[pareto_front.front()].objectives[i];
+      assert(range >= 0);
 
-    std::sort(pareto_front.begin(), pareto_front.end(), [&](const uint64_t a, const uint64_t b) -> bool { return population[a].latency < population[b].latency; });
-    
-    population[pareto_front.front()].crowding_distance = 10e14;
-    population[pareto_front.back()].crowding_distance = 10e14;
-
-    range = population[pareto_front.back()].latency - population[pareto_front.front()].latency;
-
-    for (uint64_t i = 1; i < pareto_front.size() - 1; i++) {
-      uint64_t r_prev = pareto_front[i-1];
-      uint64_t r_next = pareto_front[i+1];
-      uint64_t r_this = pareto_front[i];
-      population[r_this].crowding_distance += std::abs(population[r_next].latency - population[r_prev].latency) / range;
+      for (uint64_t j = 1; j < pareto_front.size() - 1; j++) {
+        uint64_t r_prev = pareto_front[j-1];
+        uint64_t r_next = pareto_front[j+1];
+        uint64_t r_this = pareto_front[j];
+        population[r_this].crowding_distance += std::abs(population[r_next].objectives[i] - population[r_prev].objectives[i]) / range;
+      }
     }
   
   }
@@ -299,6 +306,8 @@ class Medea
       }
       pareto_front = new_pareto_front;
     }
+
+    assert(total_debug == population.size());
   }
 
   void Merging() {
@@ -322,8 +331,11 @@ class Medea
   void PrintGeneration(std::ofstream& out, Population& pop, uint64_t gen_id) {
     out << "GEN " << gen_id << std::endl;
 
-    for (Individual& ind : pop) 
-      out <<  ind.rank << "," << ind.crowding_distance << "," << ind.energy << "," << ind.latency << std::endl;
+    for (Individual& ind : pop) {
+      out <<  ind.rank << "," << ind.crowding_distance << "," << ind.objectives[0] << "," << ind.objectives[1] << "," << ind.objectives[2] << std::endl;
+    }
+    
+    out.flush();
   }
 
   // ---------------
@@ -416,7 +428,7 @@ class Medea
 
       double mean = 0.0;
       for (auto& i : parent_population_) mean += i.fitness;
-      mean /= population_size_;
+        mean /= population_size_;
       std::cout << "[INFO] Generation " << g << " done. Average Fitness: " << mean << std::endl;
 
       PrintGeneration(population_file, parent_population_, g);

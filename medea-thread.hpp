@@ -116,11 +116,26 @@ private:
                                   { return cur && status.success; });
   }
 
-  void UpdateArchitecture(model::Engine& engine) {
+  uint64_t GetSpatialSpread(const Mapping& mapping, spacetime::Dimension dim, uint64_t level) {
+    uint64_t result = 1;
+    
+    uint64_t start = level > 0 ? mapping.loop_nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
+    uint64_t end = mapping.loop_nest.storage_tiling_boundaries.at(level) + 1;
+
+    for (auto it = mapping.loop_nest.loops.begin() + start; it != mapping.loop_nest.loops.begin() + end; it++)
+      if (it->spacetime_dimension == dim)
+        result *= it->end;
+
+    return result;
+  }
+
+  void UpdateArchitecture(const Mapping& mapping, model::Engine& engine) {
     // Update area and revaluate sigh
     
     //YAML::Node root_node = arch_config_.getYNode();
     std::map<std::string, uint64_t> updates;
+
+    unsigned buffer_update_granularity = 16; // This should be configurable FIXME
     
     
     auto new_specs = model::Topology::Specs(arch_specs_.topology);
@@ -139,7 +154,29 @@ private:
       buffer->effective_size = static_cast<uint64_t>(std::floor(buffer->size.Get() / buffer->multiple_buffering.Get()));
       //std::cout << " - New size: " << buffer->size << std::endl;
 
-      updates[buffer->name.Get()] = (utilized_capacity / block_size) + 1;
+      unsigned needed_depth = (utilized_capacity / block_size) + 1;
+      unsigned remainder = needed_depth % buffer_update_granularity;
+      updates[buffer->name.Get()] = remainder ? needed_depth + buffer_update_granularity - remainder : needed_depth;
+    }
+
+    for (int i = arch_specs_.topology.NumLevels() - 2; i >= 0; i--)
+    {
+      if (i == 0)
+      {
+        auto arithmetic = new_specs.GetArithmeticLevel();
+
+        arithmetic->meshX = GetSpatialSpread(mapping, spacetime::Dimension::SpaceX, i) * new_specs.GetStorageLevel(i)->meshX.Get();
+        arithmetic->meshY = GetSpatialSpread(mapping, spacetime::Dimension::SpaceY, i) * new_specs.GetStorageLevel(i)->meshY.Get();
+        arithmetic->instances = arithmetic->meshX.Get() * arithmetic->meshY.Get();
+      }
+      else
+      {
+        auto buffer = new_specs.GetStorageLevel(i-1);
+
+        buffer->meshX = GetSpatialSpread(mapping, spacetime::Dimension::SpaceX, i) * new_specs.GetStorageLevel(i)->meshX.Get();
+        buffer->meshY = GetSpatialSpread(mapping, spacetime::Dimension::SpaceY, i) * new_specs.GetStorageLevel(i)->meshY.Get();
+        buffer->instances = buffer->meshX.Get() * buffer->meshY.Get();
+      }
     }
 
     std::string out_prefix = "medea." + std::to_string(thread_id_) + "_tmp";
@@ -185,14 +222,15 @@ private:
       return false;
 
     // Update storage capacities based on mappping -> update area
-    UpdateArchitecture(engine);
+    UpdateArchitecture(mapping, engine);
     status_per_level = engine.Evaluate(mapping, workload_);
     assert( EngineSuccess(status_per_level) );
 
     // Population update
     individual.genome = mapping;
-    individual.energy = engine.Energy();
-    individual.latency = engine.Cycles();
+    individual.objectives[0] = engine.Energy();
+    individual.objectives[1] = (double) engine.Cycles();
+    individual.objectives[2] = engine.Area();
     individual.fitness = Fitness(engine);
     individual.engine = engine;
 
@@ -765,19 +803,19 @@ private:
         Mutation(population_[ep]);
         Mutation(population_[ep+1]);
 
-        std::cout << population_[ep].genome.PrintCompact() << std::endl;
+        //std::cout << population_[ep].genome.PrintCompact() << std::endl;
 
         if (Evaluate(population_[ep].genome, population_[ep]))
           debug_cross_count++;
         else 
           RandomIndividual(ep, population_);
 
-        std::cout << population_[ep+1].genome.PrintCompact() << std::endl;
+        //std::cout << population_[ep+1].genome.PrintCompact() << std::endl;
         
         if (Evaluate(population_[ep+1].genome, population_[ep+1])) 
           debug_cross_count++;
         else 
-          RandomIndividual(ep, population_);
+          RandomIndividual(ep+1, population_);
       }
 
       std::cout << "[T"<< thread_id_ << "] Successfully evaluated " << debug_cross_count << "/" << pop_slice_end - pop_slice_start << " crossed mappings." << std::endl;

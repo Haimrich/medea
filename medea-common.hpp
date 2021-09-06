@@ -20,11 +20,10 @@ namespace medea {
 struct Individual {
   Mapping genome;
   model::Engine engine;
-  double energy;
-  double latency;
-  uint32_t rank = std::numeric_limits<uint32_t>::max();
+  std::array<double, 3> objectives; // energy, latency, area
+  uint32_t rank;
   double crowding_distance;
-  double fitness; // temp
+  double fitness; // deprecated
 };
 
 typedef std::vector<Individual> Population;
