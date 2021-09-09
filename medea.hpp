@@ -229,6 +229,7 @@ class Medea
 
   void AssignCrowdingDistance(Population& population, std::vector<uint64_t>& pareto_front) {
     for (auto p : pareto_front)
+      //population[p].crowding_distance = -std::accumulate(population[p].objectives.begin(), population[p].objectives.end(), 1, std::multiplies<double>());
       population[p].crowding_distance = 0.0;
 
     for (unsigned i = 0; i < std::tuple_size<decltype(Individual::objectives)>::value; i++) {
@@ -249,7 +250,7 @@ class Medea
         population[r_this].crowding_distance += std::abs(population[r_next].objectives[i] - population[r_prev].objectives[i]) / range;
       }
     }
-  
+
   }
 
   void AssignRankAndCrowdingDistance(Population& population) {

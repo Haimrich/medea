@@ -149,14 +149,14 @@ private:
       auto block_size = buffer->block_size.Get();
 
       if (!buffer->size.IsSpecified()) continue;
-      //std::cout << "[UPD] Level: " << buffer->name << " - Old Size: " << buffer->size;
-      buffer->size = ((utilized_capacity / block_size) + 1) * block_size;
-      buffer->effective_size = static_cast<uint64_t>(std::floor(buffer->size.Get() / buffer->multiple_buffering.Get()));
-      //std::cout << " - New size: " << buffer->size << std::endl;
 
       unsigned needed_depth = (utilized_capacity / block_size) + 1;
       unsigned remainder = needed_depth % buffer_update_granularity;
-      updates[buffer->name.Get()] = remainder ? needed_depth + buffer_update_granularity - remainder : needed_depth;
+      unsigned new_depth = remainder ? needed_depth + buffer_update_granularity - remainder : needed_depth;
+      
+      buffer->size = new_depth * block_size;
+      buffer->effective_size = static_cast<uint64_t>(std::floor(buffer->size.Get() / buffer->multiple_buffering.Get()));
+      updates[buffer->name.Get()] = new_depth;
     }
 
     for (int i = arch_specs_.topology.NumLevels() - 2; i >= 0; i--)
@@ -235,8 +235,10 @@ private:
     individual.engine = engine;
 
     // Best update
-    if (!best_individual_.engine.IsSpecced() || individual.fitness > best_individual_.fitness)
+    if (!best_individual_.engine.IsSpecced() || individual.fitness > best_individual_.fitness) {
       best_individual_ = individual;     
+      assert( best_individual_.engine.GetTopology().MACCs() == individual.engine.GetTopology().MACCs() );
+    }
 
     return true;
   
@@ -399,8 +401,7 @@ private:
   void FanoutMutation(Mapping& mapping) {
     // Set spatial loops bounds to maximum possible
     for (uint32_t level = 0; level < mapping.loop_nest.storage_tiling_boundaries.size(); level++) {
-      //if (arch_props_.Fanout(level) > 1) {
-      //std::cout << arch_props_.StorageLevelName(level) << std::endl;
+      if (arch_props_.Fanout(level) == 1) continue;
 
       bool is_constrained;
       std::map<problem::Shape::DimensionID, int> factors;
@@ -411,62 +412,97 @@ private:
       } catch (const std::out_of_range& oor) {
         is_constrained = false;
       }
-    
-      loop::Nest subnest = mapping.loop_nest;
-      uint64_t start = level > 0 ? subnest.storage_tiling_boundaries.at(level-1) + 1 : 0;
-      uint64_t end = subnest.storage_tiling_boundaries.at(level) + 1;
-      std::vector<loop::Descriptor> level_nest(subnest.loops.begin() + start, subnest.loops.begin() + end);
+
+      std::vector<loop::Descriptor> level_nest = GetNestAtLevel(mapping, level);
       
+      bool x_loop_found = false;
+      bool y_loop_found = false;
       uint32_t x_product = 1;
       uint32_t y_product = 1;
       for (auto& s : level_nest) {
-        if (s.spacetime_dimension == spacetime::Dimension::SpaceX)
+        if (s.spacetime_dimension == spacetime::Dimension::SpaceX) {
           x_product *= s.end;
-        else if (s.spacetime_dimension == spacetime::Dimension::SpaceY)
+          x_loop_found = true;
+        } else if (s.spacetime_dimension == spacetime::Dimension::SpaceY) {
           y_product *= s.end;
+          y_loop_found = true;
+        }
+      }
+      
+      if (x_loop_found || y_loop_found) {
+        for (auto& s : level_nest) {
+          if (s.spacetime_dimension == spacetime::Dimension::Time) continue;
+          
+          uint64_t new_factor = 0;
+          if (is_constrained) {
+            auto factor = factors.find(s.dimension);
+            if (factor != factors.end()) {
+              new_factor = factor->second;
+
+              if (s.spacetime_dimension == spacetime::Dimension::SpaceX && x_product * new_factor / s.end > arch_props_.FanoutX(level))
+                continue;
+              if (s.spacetime_dimension == spacetime::Dimension::SpaceY && y_product * new_factor / s.end > arch_props_.FanoutY(level))
+                continue;
+            }
+          }
+          
+          if (new_factor == 0) {
+
+            new_factor = s.spacetime_dimension == spacetime::Dimension::SpaceX ? 
+                    arch_props_.FanoutX(level) / (x_product / s.end) :
+                    arch_props_.FanoutY(level) / (y_product / s.end) ;
+
+            if ((uint64_t)workload_.GetBound(s.dimension) < new_factor)
+              new_factor = workload_.GetBound(s.dimension);
+            else if (workload_.GetBound(s.dimension) % new_factor)
+              continue; 
+              // TODO - Find greatest divisor of workload_.GetBound(s->dimension) less than Fanout (new_factor)
+          }
+
+          uint64_t old_factor = s.end;
+          s.end = new_factor ;
+
+          FactorCompensation(s.dimension, s.stride, old_factor, s.end, level, mapping.loop_nest); 
+        }
+
+
+        unsigned start = level > 0 ? mapping.loop_nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
+        unsigned end = mapping.loop_nest.storage_tiling_boundaries.at(level) + 1;
+        mapping.loop_nest.loops.erase(mapping.loop_nest.loops.begin() + start, mapping.loop_nest.loops.begin() + end);
+        mapping.loop_nest.loops.insert(mapping.loop_nest.loops.begin() + start, level_nest.begin(), level_nest.end());
       }
 
-      for (auto& s : level_nest) {
-        if (s.spacetime_dimension == spacetime::Dimension::Time) continue;
-        
-        // FIXME respect product
-        uint64_t new_factor = 0;
-        if (is_constrained) {
-          auto factor = factors.find(s.dimension);
-          if (factor != factors.end()) 
-            new_factor = factor->second;
-        
-        }
-        
-        if (new_factor == 0) {
+      if (!y_loop_found && level_nest.size() > 1) {
+        /*
+        std::cout << "FANOUT LEVEL " << level << " Size: " << level_nest.size() << std::endl;
+        for (auto l : level_nest)
+          std::cout << l;
+        for (uint32_t level = 0; level < mapping.loop_nest.storage_tiling_boundaries.size(); level++) 
+          std::cout << " " << arch_props_.Fanout(level);
+        std::cout << std::endl << "FM_P: " << mapping.PrintCompact() << std::endl;
+        */
 
-          new_factor = s.spacetime_dimension == spacetime::Dimension::SpaceX ? 
-                  arch_props_.FanoutX(level) :
-                  arch_props_.FanoutY(level);
+        unsigned start = level > 0 ? mapping.loop_nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
+        level_nest = GetNestAtLevel(mapping, level);
 
-          if ((uint64_t)workload_.GetBound(s.dimension) < new_factor)
-            new_factor = workload_.GetBound(s.dimension);
-          else if (workload_.GetBound(s.dimension) % new_factor)
-            continue; // TODO - Find greatest divisor of workload_.GetBound(s->dimension) less than Fanout (new_factor)
+        int loop_tc = -1;
+        for (unsigned j = 0; j < level_nest.size(); j++) { 
+          if ((unsigned)level_nest[j].end <= arch_props_.FanoutY(level) && 
+              level_nest[j].end > 1 &&
+              (loop_tc == -1 || level_nest[j].end > level_nest[loop_tc].end) ) 
+            loop_tc = j;
         }
 
-        uint64_t old_factor = s.end;
+        if (loop_tc > -1) {
+          mapping.loop_nest.loops.at(start + loop_tc).spacetime_dimension = spacetime::Dimension::SpaceY;
+          if (loop_tc != 0) 
+            std::swap(mapping.loop_nest.loops.at(start + loop_tc), mapping.loop_nest.loops.at(start));
+  
+        }
 
-        if (s.spacetime_dimension == spacetime::Dimension::SpaceX && x_product * new_factor / s.end > arch_props_.FanoutX(level))
-          continue;
-        if (s.spacetime_dimension == spacetime::Dimension::SpaceY && y_product * new_factor / s.end > arch_props_.FanoutY(level))
-          continue;
-        s.end = new_factor ;
-
-        FactorCompensation(s.dimension, s.stride, old_factor, s.end, level, mapping.loop_nest); 
+      
       }
-
-
-      start = level > 0 ? mapping.loop_nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
-      end = mapping.loop_nest.storage_tiling_boundaries.at(level) + 1;
-      mapping.loop_nest.loops.erase(mapping.loop_nest.loops.begin() + start, mapping.loop_nest.loops.begin() + end);
-      mapping.loop_nest.loops.insert(mapping.loop_nest.loops.begin() + start, level_nest.begin(), level_nest.end());
-
+      std::cout << "FM_D: " << mapping.PrintCompact() << std::endl;
     }
   }
 
@@ -493,6 +529,7 @@ private:
     // FIXME - questa cosa non ha senso con l'input dataspace o comunque quando gli indici sono composti
     // Va considerato lo stride la dilation e tante altre cose...
     uint64_t factor_needed = buffer_capacity / utilized_capacity;
+    if (factor_needed == 1) return;
     
     uint64_t start = level > 0 ? mapping.loop_nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
     uint64_t end = mapping.loop_nest.storage_tiling_boundaries.at(level) + 1;
