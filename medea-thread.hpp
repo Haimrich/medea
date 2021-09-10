@@ -66,6 +66,9 @@ private:
   double fill_mutation_prob_, parallel_mutation_prob_, random_mutation_prob_;
   bool use_tournament_;
 
+  Mapping user_mapping_;
+  bool user_mapping_defined_;
+
   std::thread thread_;
 
   RandomGenerator128 *if_rng_, *lp_rng_, *db_rng_, *sp_rng_, *crossover_rng_;
@@ -401,7 +404,7 @@ private:
   void FanoutMutation(Mapping& mapping) {
     // Set spatial loops bounds to maximum possible
     for (uint32_t level = 0; level < mapping.loop_nest.storage_tiling_boundaries.size(); level++) {
-      if (arch_props_.Fanout(level) == 1) continue;
+      if (arch_props_.Fanout(level) <= 1) continue;
 
       bool is_constrained;
       std::map<problem::Shape::DimensionID, int> factors;
@@ -447,11 +450,11 @@ private:
           }
           
           if (new_factor == 0) {
-
+            std::cout << "FM_P: " << mapping.PrintCompact() << std::endl;
             new_factor = s.spacetime_dimension == spacetime::Dimension::SpaceX ? 
                     arch_props_.FanoutX(level) / (x_product / s.end) :
                     arch_props_.FanoutY(level) / (y_product / s.end) ;
-
+           
             if ((uint64_t)workload_.GetBound(s.dimension) < new_factor)
               new_factor = workload_.GetBound(s.dimension);
             else if (workload_.GetBound(s.dimension) % new_factor)
@@ -502,7 +505,7 @@ private:
 
       
       }
-      std::cout << "FM_D: " << mapping.PrintCompact() << std::endl;
+      //std::cout << "FM_D: " << mapping.PrintCompact() << std::endl;
     }
   }
 
@@ -693,6 +696,34 @@ private:
   }
 
   void RandomPopulation(uint32_t p, uint32_t pop_slice_end, Population& population) {
+    if (p == 0 && p < pop_slice_end && user_mapping_defined_) {
+      // This should fix CoSa mapping fanout problems.
+      for (uint32_t level = 0; level < user_mapping_.loop_nest.storage_tiling_boundaries.size(); level++) {
+        uint64_t start = level > 0 ? user_mapping_.loop_nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
+        uint64_t end = user_mapping_.loop_nest.storage_tiling_boundaries.at(level) + 1;
+
+        uint32_t x_product = 1;
+        uint32_t y_product = 1;
+        for (auto s = user_mapping_.loop_nest.loops.begin() + start; s != user_mapping_.loop_nest.loops.begin() + end; s++) {
+          if (s->spacetime_dimension == spacetime::Dimension::SpaceX) {
+            x_product *= s->end;
+          } else if (s->spacetime_dimension == spacetime::Dimension::SpaceY) {
+            y_product *= s->end;
+          }
+        }
+        if (x_product > arch_props_.FanoutX(level) || y_product > arch_props_.FanoutY(level)) {
+          for (auto s = user_mapping_.loop_nest.loops.begin() + start; s != user_mapping_.loop_nest.loops.begin() + end; s++) {
+            if (s->spacetime_dimension == spacetime::Dimension::SpaceX)
+              s->spacetime_dimension = spacetime::Dimension::SpaceY;
+            else if (s->spacetime_dimension == spacetime::Dimension::SpaceY)
+              s->spacetime_dimension = spacetime::Dimension::SpaceX;
+          }
+        }
+      }
+      assert(Evaluate(user_mapping_, population[p]));
+      p++;
+    }
+
     while (p < pop_slice_end)
     {
       // Mapping generation
@@ -744,6 +775,8 @@ private:
     double parallel_mutation_prob,
     double random_mutation_prob,
     bool use_tournament,
+    Mapping user_mapping,
+    bool user_mapping_defined,
     RandomGenerator128* if_rng,
     RandomGenerator128* lp_rng,
     RandomGenerator128* db_rng,
@@ -773,6 +806,8 @@ private:
       parallel_mutation_prob_(parallel_mutation_prob),
       random_mutation_prob_(random_mutation_prob),
       use_tournament_(use_tournament),
+      user_mapping_(user_mapping),
+      user_mapping_defined_(user_mapping_defined),
       thread_(),
       if_rng_(if_rng),
       lp_rng_(lp_rng),

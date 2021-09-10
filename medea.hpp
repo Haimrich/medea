@@ -10,6 +10,7 @@
 #include "util/numeric.hpp"
 
 #include "mapping/loop.hpp"
+#include "mapping/parser.hpp"
 
 
 //--------------------------------------------//
@@ -55,6 +56,9 @@ class Medea
   std::uniform_real_distribution<> proba;
 
   enum Dominance { DOMINATING, DOMINATED, FRONTIER };
+
+  Mapping user_mapping_;
+  bool user_mapping_defined_;
 
  public:
 
@@ -160,6 +164,13 @@ class Medea
       std::cout << "Using threads = " << num_threads_ << std::endl;
     else
       std::cout << "Using all available hardware threads = " << num_threads_ << std::endl;
+
+    // Mapping injection
+    user_mapping_defined_ = rootNode.exists("mapping");
+    if (user_mapping_defined_) {
+      auto mapping_conf = rootNode.lookup("mapping");
+      user_mapping_ = mapping::ParseAndConstruct(mapping_conf, arch_specs_, workload_);
+    }
 
   
     // Thread Orchestrator
@@ -380,6 +391,8 @@ class Medea
           parallel_mutation_prob_,
           random_mutation_prob_,
           use_tournament_,
+          user_mapping_,
+          user_mapping_defined_,
           if_rng_,
           lp_rng_,
           db_rng_,
@@ -396,7 +409,6 @@ class Medea
     thread_orchestrator_->LeaderWait();
     
     std::cout << "[INFO] Initial Population Done." << std::endl;
-
     AssignRankAndCrowdingDistance(parent_population_);
 
     thread_orchestrator_->LeaderDone();
