@@ -6,6 +6,9 @@
 #include <iomanip>
 #include <cmath> 
 
+#include <sys/stat.h>
+#include <errno.h>
+
 #include "compound-config/compound-config.hpp"
 #include "util/numeric.hpp"
 
@@ -350,6 +353,32 @@ class Medea
     out.flush();
   }
 
+  void OutputParetoFrontStats() {
+    std::string dir = out_dir_ + "/pareto_stats";
+    int max_digits = std::to_string(population_size_).length();
+    
+    if (mkdir(dir.c_str(),0777) == -1) {
+      if (errno != EEXIST) {
+        std::cerr << "ERROR: Cannot create pareto_stats folder." << std::endl;
+        return;
+      }
+    }
+    
+    unsigned count = 1;
+    for (auto& ind : parent_population_) {
+      if (ind.rank) continue;
+
+      std::string ind_id = std::to_string(count);
+      std::string stats_filename = dir + "/" + out_prefix_ + ".stats." + std::string(max_digits - ind_id.length(), '0') + ind_id +  ".txt";
+      
+      std::ofstream stats_file(stats_filename);
+      stats_file << best_individual_.engine << std::endl;
+      stats_file.close();
+
+      count++;
+    }
+  }
+
   // ---------------
   // Run the mapper.
   // ---------------
@@ -476,6 +505,8 @@ class Medea
     {
       std::cout << "MESSAGE: no valid mappings found within search criteria." << std::endl;
     }
+
+    OutputParetoFrontStats();
   }
 };
 

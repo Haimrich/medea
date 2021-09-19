@@ -68,6 +68,7 @@ private:
 
   Mapping user_mapping_;
   bool user_mapping_defined_;
+  uint32_t inj_gen_;
 
   std::thread thread_;
 
@@ -454,6 +455,8 @@ private:
             new_factor = s.spacetime_dimension == spacetime::Dimension::SpaceX ? 
                     arch_props_.FanoutX(level) / (x_product / s.end) :
                     arch_props_.FanoutY(level) / (y_product / s.end) ;
+            
+            if (new_factor == 0) return;
            
             if ((uint64_t)workload_.GetBound(s.dimension) < new_factor)
               new_factor = workload_.GetBound(s.dimension);
@@ -695,35 +698,35 @@ private:
     }
   }
 
-  void RandomPopulation(uint32_t p, uint32_t pop_slice_end, Population& population) {
-    if (p == 0 && p < pop_slice_end && user_mapping_defined_) {
-      // This should fix CoSa mapping fanout problems.
-      for (uint32_t level = 0; level < user_mapping_.loop_nest.storage_tiling_boundaries.size(); level++) {
-        uint64_t start = level > 0 ? user_mapping_.loop_nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
-        uint64_t end = user_mapping_.loop_nest.storage_tiling_boundaries.at(level) + 1;
+  void InjectUserDefinedMapping(Population& pop, uint32_t id) {
+    // This should fix CoSA mapping fanout problems.
+    for (uint32_t level = 0; level < user_mapping_.loop_nest.storage_tiling_boundaries.size(); level++) {
+      uint64_t start = level > 0 ? user_mapping_.loop_nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
+      uint64_t end = user_mapping_.loop_nest.storage_tiling_boundaries.at(level) + 1;
 
-        uint32_t x_product = 1;
-        uint32_t y_product = 1;
-        for (auto s = user_mapping_.loop_nest.loops.begin() + start; s != user_mapping_.loop_nest.loops.begin() + end; s++) {
-          if (s->spacetime_dimension == spacetime::Dimension::SpaceX) {
-            x_product *= s->end;
-          } else if (s->spacetime_dimension == spacetime::Dimension::SpaceY) {
-            y_product *= s->end;
-          }
-        }
-        if (x_product > arch_props_.FanoutX(level) || y_product > arch_props_.FanoutY(level)) {
-          for (auto s = user_mapping_.loop_nest.loops.begin() + start; s != user_mapping_.loop_nest.loops.begin() + end; s++) {
-            if (s->spacetime_dimension == spacetime::Dimension::SpaceX)
-              s->spacetime_dimension = spacetime::Dimension::SpaceY;
-            else if (s->spacetime_dimension == spacetime::Dimension::SpaceY)
-              s->spacetime_dimension = spacetime::Dimension::SpaceX;
-          }
+      uint32_t x_product = 1;
+      uint32_t y_product = 1;
+      for (auto s = user_mapping_.loop_nest.loops.begin() + start; s != user_mapping_.loop_nest.loops.begin() + end; s++) {
+        if (s->spacetime_dimension == spacetime::Dimension::SpaceX) {
+          x_product *= s->end;
+        } else if (s->spacetime_dimension == spacetime::Dimension::SpaceY) {
+          y_product *= s->end;
         }
       }
-      assert(Evaluate(user_mapping_, population[p]));
-      p++;
+      if (x_product > arch_props_.FanoutX(level) || y_product > arch_props_.FanoutY(level)) {
+        for (auto s = user_mapping_.loop_nest.loops.begin() + start; s != user_mapping_.loop_nest.loops.begin() + end; s++) {
+          if (s->spacetime_dimension == spacetime::Dimension::SpaceX)
+            s->spacetime_dimension = spacetime::Dimension::SpaceY;
+          else if (s->spacetime_dimension == spacetime::Dimension::SpaceY)
+            s->spacetime_dimension = spacetime::Dimension::SpaceX;
+        }
+      }
     }
+    
+    assert(Evaluate(user_mapping_, pop[id]));
+  }
 
+  void RandomPopulation(uint32_t p, uint32_t pop_slice_end, Population& population) {
     while (p < pop_slice_end)
     {
       // Mapping generation
@@ -808,6 +811,7 @@ private:
       use_tournament_(use_tournament),
       user_mapping_(user_mapping),
       user_mapping_defined_(user_mapping_defined),
+      inj_gen_(9),
       thread_(),
       if_rng_(if_rng),
       lp_rng_(lp_rng),
@@ -861,6 +865,11 @@ private:
     // Wait for others
     thread_orchestrator_->FollowerWait(next_iteration_);
     for (uint32_t g = 0; g < num_generations_; g++) {
+      // User defined map injection
+      if (g == inj_gen_ && thread_id_ == num_threads_ - 1 && user_mapping_defined_) {
+        InjectUserDefinedMapping(parent_population_, population_size_-1);
+      }
+
       uint64_t debug_cross_count = 0;
       for (uint32_t ep = pop_slice_start; ep < pop_slice_end; ep += 2) {
         
