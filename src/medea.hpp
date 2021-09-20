@@ -1,7 +1,7 @@
 #pragma once
 
-#include "applications/medea/medea-common.hpp"
-#include "applications/medea/medea-thread.hpp"
+#include "medea-common.hpp"
+#include "medea-thread.hpp"
 
 #include <iomanip>
 #include <cmath> 

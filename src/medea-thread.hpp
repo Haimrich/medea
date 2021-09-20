@@ -27,8 +27,8 @@
 
 #pragma once
 
-#include "applications/medea/medea-common.hpp"
-#include "applications/medea/medea-accelergy.hpp"
+#include "medea-common.hpp"
+#include "medea-accelergy.hpp"
 
 extern bool gTerminate;
 
