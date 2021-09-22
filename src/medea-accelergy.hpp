@@ -31,11 +31,10 @@ namespace medea
         return result;
     }
 
-    config::CompoundConfigNode getARTfromAccelergy(config::CompoundConfig* config, std::map<std::string, uint64_t> &updates, std::string out_prefix)
+    config::CompoundConfigNode getARTfromAccelergy(std::string fast_accelergy_path, config::CompoundConfig* config, std::map<std::string, uint64_t> &updates, std::string out_prefix)
     {
         std::vector<std::string> input_files = config->inFiles;
-        std::string fast_accelergy_path = "/home/enrico/lambda/medea/scripts/fast_accelergy_ART.py";
-
+        
         std::string cmd = "python " + fast_accelergy_path;
 
         for (auto input_file : input_files)

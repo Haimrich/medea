@@ -42,6 +42,7 @@ class Medea
   Population population_, parent_population_, immigrant_population_, merged_population_;
 
   double fill_mutation_prob_, parallel_mutation_prob_, random_mutation_prob_;
+  std::string fast_accelergy_path_;
   bool use_tournament_;
 
   Orchestrator* thread_orchestrator_;
@@ -133,15 +134,15 @@ class Medea
     std::cout << "Mapspace construction complete." << std::endl;
 
    
-    // Mapper
-    auto mapper = rootNode.lookup("mapper");
+    // Medea
+    auto medea = rootNode.lookup("medea");
 
     num_generations_ = 30;
-    mapper.lookupValue("num-generations", num_generations_);
+    medea.lookupValue("num-generations", num_generations_);
     population_size_ = 100;
-    mapper.lookupValue("population-size", population_size_);
+    medea.lookupValue("population-size", population_size_);
     immigrant_population_size_ = 40;
-    mapper.lookupValue("immigrant-population-size", immigrant_population_size_);
+    medea.lookupValue("immigrant-population-size", immigrant_population_size_);
 
     population_.resize(population_size_);
     parent_population_.resize(population_size_);
@@ -151,19 +152,21 @@ class Medea
     std::cout << "Num. generations: " << num_generations_ << " - Pop. size: " << population_size_ << " - Immigrant pop. size: " << immigrant_population_size_ << std::endl;
   
     fill_mutation_prob_ = 0.3;
-    mapper.lookupValue("fill-mutation-prob", fill_mutation_prob_);
+    medea.lookupValue("fill-mutation-prob", fill_mutation_prob_);
     parallel_mutation_prob_ = 0.5;
-    mapper.lookupValue("parallel-mutation-prob", parallel_mutation_prob_);
+    medea.lookupValue("parallel-mutation-prob", parallel_mutation_prob_);
     random_mutation_prob_ = 0.5;
-    mapper.lookupValue("random-mutation-prob", random_mutation_prob_);
+    medea.lookupValue("random-mutation-prob", random_mutation_prob_);
     use_tournament_ = false;
-    mapper.lookupValue("use-tournament", use_tournament_);
+    medea.lookupValue("use-tournament", use_tournament_);
+    fast_accelergy_path_ = "../scripts/fast_accelergy_ART.py";
+    medea.lookupValue("fast-accelergy-path", fast_accelergy_path_);
 
     std::cout <<  std::setprecision(3) << "Fill Mut. Prob.: " << fill_mutation_prob_ << " - Parallel Mut. Prob.: " << parallel_mutation_prob_ << " - Random Mut. Prob.: " << random_mutation_prob_ << " - Using tournament: " << use_tournament_ << std::endl;
   
 
     num_threads_ = std::thread::hardware_concurrency();
-    if (mapper.lookupValue("num-threads", num_threads_))
+    if (medea.lookupValue("num-threads", num_threads_))
       std::cout << "Using threads = " << num_threads_ << std::endl;
     else
       std::cout << "Using all available hardware threads = " << num_threads_ << std::endl;
@@ -420,6 +423,7 @@ class Medea
           parallel_mutation_prob_,
           random_mutation_prob_,
           use_tournament_,
+          fast_accelergy_path_,
           user_mapping_,
           user_mapping_defined_,
           if_rng_,

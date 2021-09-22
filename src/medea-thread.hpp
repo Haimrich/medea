@@ -65,6 +65,7 @@ private:
 
   double fill_mutation_prob_, parallel_mutation_prob_, random_mutation_prob_;
   bool use_tournament_;
+  std::string fast_accelergy_path_;
 
   Mapping user_mapping_;
   bool user_mapping_defined_;
@@ -184,7 +185,7 @@ private:
     }
 
     std::string out_prefix = "medea." + std::to_string(thread_id_) + "_tmp";
-    auto art = getARTfromAccelergy(config_, updates, out_prefix);
+    auto art = getARTfromAccelergy(fast_accelergy_path_, config_, updates, out_prefix);
    
     model::Engine::Specs new_engine_specs;
     new_engine_specs.topology = new_specs;
@@ -778,6 +779,7 @@ private:
     double parallel_mutation_prob,
     double random_mutation_prob,
     bool use_tournament,
+    std::string fast_accelergy_path,
     Mapping user_mapping,
     bool user_mapping_defined,
     RandomGenerator128* if_rng,
@@ -809,6 +811,7 @@ private:
       parallel_mutation_prob_(parallel_mutation_prob),
       random_mutation_prob_(random_mutation_prob),
       use_tournament_(use_tournament),
+      fast_accelergy_path_(fast_accelergy_path),
       user_mapping_(user_mapping),
       user_mapping_defined_(user_mapping_defined),
       inj_gen_(9),
