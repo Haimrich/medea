@@ -83,7 +83,6 @@ private:
   
  protected:
 
-
   uint64_t gcd(uint64_t a, uint64_t b)
   {
     if (b == 0) return a;
@@ -121,27 +120,47 @@ private:
                                   { return cur && status.success; });
   }
 
-  uint64_t GetSpatialSpread(const Mapping& mapping, spacetime::Dimension dim, uint64_t level) {
+  LoopRange GetSubnestRangeAtLevel(const Mapping& mapping, unsigned level) {
+    size_t start = level > 0 ? mapping.loop_nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
+    size_t end = mapping.loop_nest.storage_tiling_boundaries.at(level) + 1;
+    return LoopRange(mapping.loop_nest.loops.begin() + start, mapping.loop_nest.loops.begin() + end);
+  } 
+
+  uint64_t GetParallelAtLevel(const Mapping& mapping, spacetime::Dimension dim, uint64_t level) {
     uint64_t result = 1;
-    
-    uint64_t start = level > 0 ? mapping.loop_nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
-    uint64_t end = mapping.loop_nest.storage_tiling_boundaries.at(level) + 1;
-
-    for (auto it = mapping.loop_nest.loops.begin() + start; it != mapping.loop_nest.loops.begin() + end; it++)
-      if (it->spacetime_dimension == dim)
-        result *= it->end;
-
+    LoopRange subnest = GetSubnestRangeAtLevel(mapping, level);
+    for (auto& l : subnest) if (l.spacetime_dimension == dim) result *= l.end;
     return result;
   }
 
-  void UpdateArchitecture(const Mapping& mapping, model::Engine& engine) {
+  std::vector<loop::Descriptor> GetSubnestAtLevel(const Mapping& mapping, unsigned level) {
+    LoopRange subnest_range = GetSubnestRangeAtLevel(mapping, level);
+    return std::vector<loop::Descriptor>(subnest_range.begin(), subnest_range.end()); 
+  }
+
+  uint64_t GetDimFactorInSubnest(problem::Shape::DimensionID dimension, std::vector<loop::Descriptor>& subnest) {
+    uint64_t factor = 1;
+    for (auto &l : subnest) 
+      if (l.dimension == dimension)
+        factor *= l.end;
+    return factor;
+  }
+
+  uint64_t GetStrideInSubnest(problem::Shape::DimensionID dimension, std::vector<loop::Descriptor>& subnest) {
+    for (auto &l : subnest) 
+      if (l.dimension == dimension)
+        return l.stride;
+    
+    return 1;
+  }
+
+  void UpdateArchitecture(Mapping& mapping, model::Engine& engine) {
     // Update area and revaluate sigh
     
     //YAML::Node root_node = arch_config_.getYNode();
     std::map<std::string, uint64_t> updates;
 
     unsigned buffer_update_granularity = 16; // This should be configurable FIXME
-    
     
     auto new_specs = model::Topology::Specs(arch_specs_.topology);
     for (unsigned i = 0; i < arch_specs_.topology.NumStorageLevels(); i++) {
@@ -164,24 +183,22 @@ private:
       updates[buffer->name.Get()] = new_depth;
     }
 
-    for (int i = arch_specs_.topology.NumLevels() - 2; i >= 0; i--)
-    {
-      if (i == 0)
-      {
-        auto arithmetic = new_specs.GetArithmeticLevel();
+    int i;
 
-        arithmetic->meshX = GetSpatialSpread(mapping, spacetime::Dimension::SpaceX, i) * new_specs.GetStorageLevel(i)->meshX.Get();
-        arithmetic->meshY = GetSpatialSpread(mapping, spacetime::Dimension::SpaceY, i) * new_specs.GetStorageLevel(i)->meshY.Get();
-        arithmetic->instances = arithmetic->meshX.Get() * arithmetic->meshY.Get();
-      }
-      else
-      {
-        auto buffer = new_specs.GetStorageLevel(i-1);
+    for (i = arch_specs_.topology.NumLevels() - 2; i > 0; i--) {
+      auto buffer = new_specs.GetStorageLevel(i-1);
 
-        buffer->meshX = GetSpatialSpread(mapping, spacetime::Dimension::SpaceX, i) * new_specs.GetStorageLevel(i)->meshX.Get();
-        buffer->meshY = GetSpatialSpread(mapping, spacetime::Dimension::SpaceY, i) * new_specs.GetStorageLevel(i)->meshY.Get();
-        buffer->instances = buffer->meshX.Get() * buffer->meshY.Get();
-      }
+      buffer->meshX = GetParallelAtLevel(mapping, spacetime::Dimension::SpaceX, i) * new_specs.GetStorageLevel(i)->meshX.Get();
+      buffer->meshY = GetParallelAtLevel(mapping, spacetime::Dimension::SpaceY, i) * new_specs.GetStorageLevel(i)->meshY.Get();
+      buffer->instances = buffer->meshX.Get() * buffer->meshY.Get();
+    }
+
+    if (i == 0) {
+      auto arithmetic = new_specs.GetArithmeticLevel();
+
+      arithmetic->meshX = GetParallelAtLevel(mapping, spacetime::Dimension::SpaceX, i) * new_specs.GetStorageLevel(i)->meshX.Get();
+      arithmetic->meshY = GetParallelAtLevel(mapping, spacetime::Dimension::SpaceY, i) * new_specs.GetStorageLevel(i)->meshY.Get();
+      arithmetic->instances = arithmetic->meshX.Get() * arithmetic->meshY.Get();
     }
 
     std::string out_prefix = "medea." + std::to_string(thread_id_) + "_tmp";
@@ -247,31 +264,6 @@ private:
 
     return true;
   
-  }
-
-  uint64_t GetDimensionAtLevel(problem::Shape::DimensionID dimension, std::vector<loop::Descriptor>& subnest) {
-    uint64_t factor = 1;
-    for (auto &l : subnest) 
-      if (l.dimension == dimension)
-        factor *= l.end;
-    return factor;
-  }
-
-  uint64_t GetStrideAtLevel(problem::Shape::DimensionID dimension, std::vector<loop::Descriptor>& subnest) {
-    for (auto &l : subnest) 
-      if (l.dimension == dimension)
-        return l.stride;
-    
-    return 1;
-  }
-
-  std::vector<loop::Descriptor> GetNestAtLevel(const Mapping& mapping, unsigned level) {
-    loop::Nest nest = mapping.loop_nest;
-    uint64_t start = level > 0 ? nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
-    uint64_t end = nest.storage_tiling_boundaries.at(level) + 1;
-    std::vector<loop::Descriptor> level_nest(nest.loops.begin() + start, nest.loops.begin() + end); 
-    
-    return level_nest;
   }
 
   void FactorCompensation(const problem::Shape::DimensionID& dim, const uint64_t stride, const uint64_t old_factor, const uint64_t new_factor, const uint64_t level, loop::Nest& nest) {
@@ -355,28 +347,23 @@ private:
     {
       problem::Shape::DimensionID dimension = problem::Shape::DimensionID(idim);
 
-      uint64_t factor_a = GetDimensionAtLevel(dimension, a_level);
-      uint64_t factor_b = GetDimensionAtLevel(dimension, b_level);
-      uint64_t stride_a = GetStrideAtLevel(dimension, a_level);
-      uint64_t stride_b = GetStrideAtLevel(dimension, b_level);
+      uint64_t factor_a = GetDimFactorInSubnest(dimension, a_level);
+      uint64_t factor_b = GetDimFactorInSubnest(dimension, b_level);
+      uint64_t stride_a = GetStrideInSubnest(dimension, a_level);
+      uint64_t stride_b = GetStrideInSubnest(dimension, b_level);
 
       FactorCompensation(dimension, stride_a, factor_a, factor_b, level, offspring_a.loop_nest);
       FactorCompensation(dimension, stride_b, factor_b, factor_a, level, offspring_b.loop_nest);
     }
+    
+    LoopRange range_a = GetSubnestRangeAtLevel(offspring_a, level);
+    LoopRange range_b = GetSubnestRangeAtLevel(offspring_b, level);
 
-    a_start = level > 0 ? parent_a.loop_nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
-    a_end = parent_a.loop_nest.storage_tiling_boundaries.at(level) + 1;
-    b_start = level > 0 ? parent_b.loop_nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
-    b_end = parent_b.loop_nest.storage_tiling_boundaries.at(level) + 1;
+    offspring_a.loop_nest.loops.erase(range_a.begin(), range_a.end());
+    offspring_a.loop_nest.loops.insert(range_a.begin(), b_level.begin(), b_level.end());
 
-    // Elimino vecchi loop da a
-    offspring_a.loop_nest.loops.erase(offspring_a.loop_nest.loops.begin() + a_start, offspring_a.loop_nest.loops.begin() + a_end);
-    offspring_a.loop_nest.loops.insert(offspring_a.loop_nest.loops.begin() + a_start, b_level.begin(), b_level.end());
-
-    // Substituting loops in B
-    offspring_b.loop_nest.loops.erase(offspring_b.loop_nest.loops.begin() + b_start,  offspring_b.loop_nest.loops.begin() + b_end);
-    offspring_b.loop_nest.loops.insert(offspring_b.loop_nest.loops.begin() + b_start, a_level.begin(), a_level.end());
- 
+    offspring_b.loop_nest.loops.erase(range_b.begin(),  range_b.end());
+    offspring_b.loop_nest.loops.insert(range_a.begin(), a_level.begin(), a_level.end());
 
     int64_t diff = a_level.size() - b_level.size();
     #ifdef DNABUG 
@@ -418,7 +405,7 @@ private:
         is_constrained = false;
       }
 
-      std::vector<loop::Descriptor> level_nest = GetNestAtLevel(mapping, level);
+      std::vector<loop::Descriptor> level_nest = GetSubnestAtLevel(mapping, level);
       
       bool x_loop_found = false;
       bool y_loop_found = false;
@@ -452,7 +439,7 @@ private:
           }
           
           if (new_factor == 0) {
-            std::cout << "FM_P: " << mapping.PrintCompact() << std::endl;
+            // std::cout << "FM_P: " << mapping.PrintCompact() << std::endl;
             new_factor = s.spacetime_dimension == spacetime::Dimension::SpaceX ? 
                     arch_props_.FanoutX(level) / (x_product / s.end) :
                     arch_props_.FanoutY(level) / (y_product / s.end) ;
@@ -472,11 +459,9 @@ private:
           FactorCompensation(s.dimension, s.stride, old_factor, s.end, level, mapping.loop_nest); 
         }
 
-
-        unsigned start = level > 0 ? mapping.loop_nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
-        unsigned end = mapping.loop_nest.storage_tiling_boundaries.at(level) + 1;
-        mapping.loop_nest.loops.erase(mapping.loop_nest.loops.begin() + start, mapping.loop_nest.loops.begin() + end);
-        mapping.loop_nest.loops.insert(mapping.loop_nest.loops.begin() + start, level_nest.begin(), level_nest.end());
+        LoopRange range = GetSubnestRangeAtLevel(mapping, level);
+        mapping.loop_nest.loops.erase(range.begin(), range.end());
+        mapping.loop_nest.loops.insert(range.begin(), level_nest.begin(), level_nest.end());
       }
 
       if (!y_loop_found && level_nest.size() > 1) {
@@ -490,7 +475,7 @@ private:
         */
 
         unsigned start = level > 0 ? mapping.loop_nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
-        level_nest = GetNestAtLevel(mapping, level);
+        level_nest = GetSubnestAtLevel(mapping, level);
 
         int loop_tc = -1;
         for (unsigned j = 0; j < level_nest.size(); j++) { 
@@ -576,12 +561,12 @@ private:
       FactorCompensation(l->dimension, l->stride, old_factor, l->end, level, mapping.loop_nest);
       std::cout << "Fill Mutation" << std::endl;
     }
-
-    // Aumentare fattore opportunamente
     
-    // Funziona solo con 3d conv così :(
-    // W = UP + R - U 
-    // H = UQ + S - U
+    // 3D conv only :(
+
+    // TODO INPUT DATATYPE
+    // W = Stride * (P - 1) + Dilation * (R - 1) 
+    // H = Stride * (Q - 1) + Dilation * (S - 1)
  
   }
 
@@ -594,10 +579,10 @@ private:
       unsigned level_b = unsigned( num_levels * uni_distribution_(rng_) );
       if (level_a == level_b) return;
 
-      auto level_a_nest = GetNestAtLevel(mapping, level_a);
+      auto level_a_nest = GetSubnestAtLevel(mapping, level_a);
       unsigned loop_a = unsigned( level_a_nest.size() * uni_distribution_(rng_) );
 
-      auto level_b_nest = GetNestAtLevel(mapping, level_b);
+      auto level_b_nest = GetSubnestAtLevel(mapping, level_b);
       unsigned loop_b = unsigned( level_b_nest.size() * uni_distribution_(rng_) );
 
       if (level_a_nest[loop_a].spacetime_dimension != spacetime::Dimension::Time ||
@@ -649,7 +634,7 @@ private:
       assert(level < num_levels);
       
       unsigned start = level > 0 ? mapping.loop_nest.storage_tiling_boundaries.at(level-1) + 1 : 0;
-      auto level_nest = GetNestAtLevel(mapping, level);
+      auto level_nest = GetSubnestAtLevel(mapping, level);
       unsigned loop_a = start + unsigned( level_nest.size() * uni_distribution_(rng_) );
       unsigned loop_b = start + unsigned( level_nest.size() * uni_distribution_(rng_) );
 

@@ -75,6 +75,18 @@ class Orchestrator {
 
 };
 
+template <class Iter>
+class Iterange {
+    Iter start_;
+    Iter end_;
+  public:
 
+    Iterange(Iter start, Iter end) : start_(start), end_(end) {}
+
+    Iter begin() { return start_; }
+    Iter end() { return end_; }
+};
+
+using LoopRange = Iterange<std::vector<loop::Descriptor>::const_iterator>;
 
 }

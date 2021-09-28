@@ -83,7 +83,6 @@ class Medea
     arch_config_ = rootNode.lookup("architecture");
     arch_specs_ = model::Engine::ParseSpecs(arch_config_);
 
-#ifdef USE_ACCELERGY
     // Call accelergy ERT with all input files
     if (arch_config_.exists("subtree") || arch_config_.exists("local")) {
       accelergy::invokeAccelergy(config->inFiles, out_prefix_, out_dir_);
@@ -99,7 +98,7 @@ class Medea
       std::cout << "Generate Accelergy ART (area reference table) to replace internal area model." << std::endl;
       arch_specs_.topology.ParseAccelergyART(art);
     }
-#endif
+    
     std::cout << "Architecture configuration complete." << std::endl;
 
     // MapSpace configuration.
