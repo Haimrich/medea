@@ -155,9 +155,7 @@ private:
   }
 
   void UpdateArchitecture(Mapping& mapping, model::Engine& engine) {
-    // Update area and revaluate sigh
     
-    //YAML::Node root_node = arch_config_.getYNode();
     std::map<std::string, uint64_t> updates;
 
     unsigned buffer_update_granularity = 16; // This should be configurable FIXME
@@ -202,30 +200,13 @@ private:
     }
 
     std::string out_prefix = "medea." + std::to_string(thread_id_) + "_tmp";
-    auto art = getARTfromAccelergy(fast_accelergy_path_, config_, updates, out_prefix);
+    auto accelergy = Accelergy(fast_accelergy_path_, config_, updates, out_prefix);
    
     model::Engine::Specs new_engine_specs;
     new_engine_specs.topology = new_specs;
-    new_engine_specs.topology.ParseAccelergyART(art);
+    new_engine_specs.topology.ParseAccelergyART(accelergy.GetART());
+    new_engine_specs.topology.ParseAccelergyERT(accelergy.GetERT());
     engine.Spec(new_engine_specs);
- 
-      /*
-      YAML::Node node = root_node;
-      while (node["subtree"]) {
-        node = node["subtree"][0];
-        auto local_node = node["local"];
-
-        if (local_node) 
-          for (auto&& buffer : local_node) 
-            if (buffer["name"]) {
-              auto buffer_name = buffer["name"].as<std::string>();
-              if (buffer_name.compare(0, storage_name.size(), storage_name) == 0 && buffer["attributes"])
-                if (buffer["attributes"]["depth"])
-                  buffer["attributes"]["depth"] = 
-            }
-          
-      }
-      */
     
   }
 

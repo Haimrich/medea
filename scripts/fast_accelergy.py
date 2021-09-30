@@ -26,6 +26,7 @@ from accelergy.plug_in_path_to_obj import plug_in_path_to_obj
 from accelergy.primitive_component import PrimitiveComponent
 from accelergy.compound_component import CompoundComponent
 from accelergy.ART_generator import AreaReferenceTableGenerator
+from accelergy.ERT_generator import EnergyReferenceTableGenerator
 from accelergy.utils import *
 
 import argparse, sys
@@ -120,6 +121,14 @@ def main():
     # ----- Add all available plug-ins
     system_state.add_plug_ins(plug_in_path_to_obj(raw_dicts.get_estimation_plug_in_paths(), output_prefix))
 
+
+    # ----- Generate Energy Reference Table
+    ert_gen = EnergyReferenceTableGenerator({'parser_version': accelergy_version,
+                                                'pcs': system_state.pcs,
+                                                'ccs': system_state.ccs,
+                                                'plug_ins': system_state.plug_ins,
+                                                'precision': precision})
+
     # ----- Generate Area Reference Table
     art_gen = AreaReferenceTableGenerator({'parser_version': accelergy_version,
                                             'pcs': system_state.pcs,
@@ -127,10 +136,10 @@ def main():
                                             'plug_ins': system_state.plug_ins,
                                             'precision': precision})
 
-    # ----- Output ART to stdou
+    # ----- Output Reference Tables to stdout
     sys.stdout = sys.__stdout__
     print(dump(art_gen.get_ART().get_ART(), default_flow_style= False, Dumper= accelergy_dumper))
-
+    print(dump(ert_gen.get_ERT().get_ERT(), default_flow_style= False, Dumper= accelergy_dumper))
 
 if __name__ == "__main__":
     main()
