@@ -344,7 +344,7 @@ private:
     offspring_a.loop_nest.loops.insert(range_a.begin(), b_level.begin(), b_level.end());
 
     offspring_b.loop_nest.loops.erase(range_b.begin(),  range_b.end());
-    offspring_b.loop_nest.loops.insert(range_a.begin(), a_level.begin(), a_level.end());
+    offspring_b.loop_nest.loops.insert(range_b.begin(), a_level.begin(), a_level.end());
 
     int64_t diff = a_level.size() - b_level.size();
     #ifdef DNABUG 

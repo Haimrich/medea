@@ -158,7 +158,7 @@ class Medea
     medea.lookupValue("random-mutation-prob", random_mutation_prob_);
     use_tournament_ = false;
     medea.lookupValue("use-tournament", use_tournament_);
-    fast_accelergy_path_ = "../scripts/fast_accelergy_ART.py";
+    fast_accelergy_path_ = std::string(BUILD_BASE_DIR) + "/../../scripts/fast_accelergy.py";
     medea.lookupValue("fast-accelergy-path", fast_accelergy_path_);
 
     std::cout <<  std::setprecision(3) << "Fill Mut. Prob.: " << fill_mutation_prob_ << " - Parallel Mut. Prob.: " << parallel_mutation_prob_ << " - Random Mut. Prob.: " << random_mutation_prob_ << " - Using tournament: " << use_tournament_ << std::endl;
