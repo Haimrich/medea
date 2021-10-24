@@ -14,13 +14,13 @@
 #include "mapping/constraints.hpp"
 #include "mapspaces/mapspace-base.hpp"
 
-#include "medea-common.hpp"
-#include "medea-mapper-thread.hpp"
+#include "common.hpp"
+#include "mapper-thread.hpp"
 
 namespace medea
 {
 
-  class Medea
+  class MedeaMapper
   {
   protected:
     config::CompoundConfig *config_;
@@ -69,9 +69,9 @@ namespace medea
 
   public:
   
-    Medea(config::CompoundConfig *config, std::string out_dir);
+    MedeaMapper(config::CompoundConfig *config, std::string out_dir);
 
-    ~Medea();
+    ~MedeaMapper();
 
     void Run();
 

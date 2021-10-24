@@ -1,7 +1,4 @@
-#include "medea-mapper.hpp"
-
-#include <sys/stat.h>
-#include <errno.h>
+#include "mapper.hpp"
 
 #include <iomanip>
 #include <cmath>
@@ -13,12 +10,12 @@
 #include "util/accelergy_interface.hpp"
 #include "mapspaces/mapspace-factory.hpp"
 
-#include "medea-common.hpp"
+#include "common.hpp"
 
 namespace medea
 {
 
-  Medea::Medea(config::CompoundConfig *config, std::string out_dir) : config_(config),
+  MedeaMapper::MedeaMapper(config::CompoundConfig *config, std::string out_dir) : config_(config),
                                                                       out_dir_(out_dir),
                                                                       rng(rand_dev()),
                                                                       proba(0, 1)
@@ -38,13 +35,13 @@ namespace medea
     if (arch_config_.exists("subtree") || arch_config_.exists("local"))
     {
       accelergy::invokeAccelergy(config->inFiles, out_prefix_, out_dir_);
-      std::string ertPath = out_prefix_ + ".ERT.yaml";
+      std::string ertPath = out_dir_ + "/" + out_prefix_ + ".ERT.yaml";
       auto ertConfig = new config::CompoundConfig(ertPath.c_str());
       auto ert = ertConfig->getRoot().lookup("ERT");
       std::cout << "Generate Accelergy ERT (energy reference table) to replace internal energy model." << std::endl;
       arch_specs_.topology.ParseAccelergyERT(ert);
 
-      std::string artPath = out_prefix_ + ".ART.yaml";
+      std::string artPath = out_dir_ + "/" + out_prefix_ + ".ART.yaml";
       auto artConfig = new config::CompoundConfig(artPath.c_str());
       auto art = artConfig->getRoot().lookup("ART");
       std::cout << "Generate Accelergy ART (area reference table) to replace internal area model." << std::endl;
@@ -138,7 +135,7 @@ namespace medea
     crossover_rng_ = new RandomGenerator128(10000);
   }
 
-  Medea::~Medea()
+  MedeaMapper::~MedeaMapper()
   {
     if (mapspace_)
       delete mapspace_;
@@ -161,7 +158,7 @@ namespace medea
       delete crossover_rng_;
   }
 
-  void Medea::Survival()
+  void MedeaMapper::Survival()
   {
     // Sort by rank and crowding distance and select population_size_
     std::partial_sort_copy(
@@ -177,7 +174,7 @@ namespace medea
       std::shuffle(std::begin(parent_population_), std::end(parent_population_), rng);
   }
 
-  Medea::Dominance Medea::CheckDominance(const Individual &a, const Individual &b)
+  MedeaMapper::Dominance MedeaMapper::CheckDominance(const Individual &a, const Individual &b)
   {
     bool all_a_less_or_equal_than_b = true;
     bool any_a_less_than_b = false;
@@ -206,7 +203,7 @@ namespace medea
     return Dominance::FRONTIER;
   }
 
-  void Medea::AssignCrowdingDistance(Population &population, std::vector<uint64_t> &pareto_front)
+  void MedeaMapper::AssignCrowdingDistance(Population &population, std::vector<uint64_t> &pareto_front)
   {
     for (auto p : pareto_front)
       //population[p].crowding_distance = -std::accumulate(population[p].objectives.begin(), population[p].objectives.end(), 1, std::multiplies<double>());
@@ -233,7 +230,7 @@ namespace medea
     }
   }
 
-  void Medea::AssignRankAndCrowdingDistance(Population &population)
+  void MedeaMapper::AssignRankAndCrowdingDistance(Population &population)
   {
     std::vector<uint64_t> pareto_front;
     std::vector<std::vector<uint64_t>> dominated_by(population.size(), std::vector<uint64_t>());
@@ -297,7 +294,7 @@ namespace medea
     assert(total_debug == population.size());
   }
 
-  void Medea::Merging()
+  void MedeaMapper::Merging()
   {
     std::copy(
         population_.begin(),
@@ -313,7 +310,7 @@ namespace medea
         merged_population_.begin() + 2 * population_size_);
   }
 
-  void Medea::PrintGeneration(std::ofstream &out, Population &pop, uint64_t gen_id)
+  void MedeaMapper::PrintGeneration(std::ofstream &out, Population &pop, uint64_t gen_id)
   {
     out << "GEN " << gen_id << std::endl;
 
@@ -325,19 +322,10 @@ namespace medea
     out.flush();
   }
 
-  void Medea::OutputParetoFrontStats()
+  void MedeaMapper::OutputParetoFrontStats()
   {
-    std::string dir = out_dir_ + "/pareto_stats";
+    std::string dir = out_dir_ + "/pareto";
     int max_digits = std::to_string(population_size_).length();
-
-    if (mkdir(dir.c_str(), 0777) == -1)
-    {
-      if (errno != EEXIST)
-      {
-        std::cerr << "ERROR: Cannot create pareto_stats folder." << std::endl;
-        return;
-      }
-    }
 
     unsigned count = 1;
     for (auto &ind : parent_population_)
@@ -356,7 +344,7 @@ namespace medea
     }
   }
 
-  void Medea::Run()
+  void MedeaMapper::Run()
   {
     // Output file names.
     const std::string stats_file_name = out_dir_ + "/" + out_prefix_ + ".stats.txt";
@@ -364,11 +352,11 @@ namespace medea
     const std::string pop_txt_file_name = out_dir_ + "/" + out_prefix_ + ".populations.txt";
 
     // Thread Start
-    std::vector<MedeaThread *> threads_;
+    std::vector<MedeaMapperThread *> threads_;
     for (unsigned t = 0; t < num_threads_; t++)
     {
       threads_.push_back(
-          new MedeaThread(
+          new MedeaMapperThread(
               t,
               config_,
               out_dir_,

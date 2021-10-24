@@ -4,13 +4,13 @@
 #include "mapspaces/mapspace-base.hpp"
 #include "mapping/constraints.hpp"
 
-#include "medea-common.hpp"
-#include "medea-accelergy.hpp"
+#include "common.hpp"
+#include "accelergy.hpp"
 
 namespace medea
 {
 
-  class MedeaThread
+  class MedeaMapperThread
   {
 
   private:
@@ -104,7 +104,7 @@ namespace medea
     uint64_t Tournament();
 
   public:
-    MedeaThread(
+    MedeaMapperThread(
         unsigned thread_id,
         config::CompoundConfig *config,
         std::string out_dir,
@@ -136,7 +136,7 @@ namespace medea
         RandomGenerator128 *sp_rng,
         RandomGenerator128 *crossover_rng);
 
-    ~MedeaThread();
+    ~MedeaMapperThread();
 
     void Start();
 

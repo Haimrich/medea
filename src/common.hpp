@@ -13,7 +13,6 @@
 #include "mapping/arch-properties.hpp"
 #include "mapspaces/mapspace-base.hpp"
 
-
 namespace medea
 {
 

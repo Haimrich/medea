@@ -62,7 +62,7 @@ include_directories(${YAML_CPP_INCLUDE_DIRS})
 set(Boost_USE_STATIC_LIBS ON) 
 set(Boost_USE_MULTITHREADED ON)  
 set(Boost_USE_STATIC_RUNTIME OFF) 
-find_package(Boost REQUIRED COMPONENTS iostreams serialization program_options)
+find_package(Boost REQUIRED COMPONENTS iostreams serialization program_options filesystem)
 message(STATUS "Boost version: ${Boost_VERSION}") 
 include_directories(${Boost_INCLUDE_DIRS}) 
 

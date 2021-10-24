@@ -1,35 +1,35 @@
-#include "medea-mapper-thread.hpp"
+#include "mapper-thread.hpp"
 
 #include "mapspaces/mapspace-base.hpp"
 #include "mapping/constraints.hpp"
 
-#include "medea-common.hpp"
-#include "medea-accelergy.hpp"
+#include "common.hpp"
+#include "accelergy.hpp"
 
 namespace medea
 {
 
-  uint64_t MedeaThread::gcd(uint64_t a, uint64_t b)
+  uint64_t MedeaMapperThread::gcd(uint64_t a, uint64_t b)
   {
     if (b == 0)
       return a;
     return gcd(b, a % b);
   }
 
-  double MedeaThread::Fitness(model::Engine engine)
+  double MedeaMapperThread::Fitness(model::Engine engine)
   {
     auto stats = engine.GetTopology().GetStats();
     return -stats.energy * stats.cycles;
   }
 
-  bool MedeaThread::EngineSuccess(std::vector<model::EvalStatus> &status_per_level)
+  bool MedeaMapperThread::EngineSuccess(std::vector<model::EvalStatus> &status_per_level)
   {
     return std::accumulate(status_per_level.begin(), status_per_level.end(), true,
                            [](bool cur, const model::EvalStatus &status)
                            { return cur && status.success; });
   }
 
-  bool MedeaThread::RandomMapping(Mapping *mapping)
+  bool MedeaMapperThread::RandomMapping(Mapping *mapping)
   {
     // Prepare a new mapping ID.
     std::unique_lock<std::mutex> lock(*global_mutex_);
@@ -50,14 +50,14 @@ namespace medea
                            { return cur && status.success; });
   }
 
-  LoopRange MedeaThread::GetSubnestRangeAtLevel(const Mapping &mapping, unsigned level)
+  LoopRange MedeaMapperThread::GetSubnestRangeAtLevel(const Mapping &mapping, unsigned level)
   {
     size_t start = level > 0 ? mapping.loop_nest.storage_tiling_boundaries.at(level - 1) + 1 : 0;
     size_t end = mapping.loop_nest.storage_tiling_boundaries.at(level) + 1;
     return LoopRange(mapping.loop_nest.loops.begin() + start, mapping.loop_nest.loops.begin() + end);
   }
 
-  uint64_t MedeaThread::GetParallelAtLevel(const Mapping &mapping, spacetime::Dimension dim, uint64_t level)
+  uint64_t MedeaMapperThread::GetParallelAtLevel(const Mapping &mapping, spacetime::Dimension dim, uint64_t level)
   {
     uint64_t result = 1;
     LoopRange subnest = GetSubnestRangeAtLevel(mapping, level);
@@ -67,13 +67,13 @@ namespace medea
     return result;
   }
 
-  std::vector<loop::Descriptor> MedeaThread::GetSubnestAtLevel(const Mapping &mapping, unsigned level)
+  std::vector<loop::Descriptor> MedeaMapperThread::GetSubnestAtLevel(const Mapping &mapping, unsigned level)
   {
     LoopRange subnest_range = GetSubnestRangeAtLevel(mapping, level);
     return std::vector<loop::Descriptor>(subnest_range.begin(), subnest_range.end());
   }
 
-  uint64_t MedeaThread::GetDimFactorInSubnest(problem::Shape::DimensionID dimension, std::vector<loop::Descriptor> &subnest)
+  uint64_t MedeaMapperThread::GetDimFactorInSubnest(problem::Shape::DimensionID dimension, std::vector<loop::Descriptor> &subnest)
   {
     uint64_t factor = 1;
     for (auto &l : subnest)
@@ -82,7 +82,7 @@ namespace medea
     return factor;
   }
 
-  uint64_t MedeaThread::GetStrideInSubnest(problem::Shape::DimensionID dimension, std::vector<loop::Descriptor> &subnest)
+  uint64_t MedeaMapperThread::GetStrideInSubnest(problem::Shape::DimensionID dimension, std::vector<loop::Descriptor> &subnest)
   {
     for (auto &l : subnest)
       if (l.dimension == dimension)
@@ -91,7 +91,7 @@ namespace medea
     return 1;
   }
 
-  void MedeaThread::UpdateArchitecture(Mapping &mapping, model::Engine &engine)
+  void MedeaMapperThread::UpdateArchitecture(Mapping &mapping, model::Engine &engine)
   {
 
     std::map<std::string, uint64_t> updates;
@@ -152,7 +152,7 @@ namespace medea
     engine.Spec(new_engine_specs);
   }
 
-  bool MedeaThread::Evaluate(Mapping mapping, Individual &individual)
+  bool MedeaMapperThread::Evaluate(Mapping mapping, Individual &individual)
   {
     model::Engine engine;
     engine.Spec(arch_specs_);
@@ -190,7 +190,7 @@ namespace medea
     return true;
   }
 
-  void MedeaThread::FactorCompensation(const problem::Shape::DimensionID &dim, const uint64_t stride, const uint64_t old_factor, const uint64_t new_factor, const uint64_t level, loop::Nest &nest)
+  void MedeaMapperThread::FactorCompensation(const problem::Shape::DimensionID &dim, const uint64_t stride, const uint64_t old_factor, const uint64_t new_factor, const uint64_t level, loop::Nest &nest)
   {
 
     if (new_factor < old_factor)
@@ -259,7 +259,7 @@ namespace medea
     }
   }
 
-  void MedeaThread::Crossover(const Mapping &parent_a, const Mapping &parent_b, Mapping &offspring_a, Mapping &offspring_b)
+  void MedeaMapperThread::Crossover(const Mapping &parent_a, const Mapping &parent_b, Mapping &offspring_a, Mapping &offspring_b)
   {
     global_mutex_->lock();
     offspring_a = parent_a;
@@ -329,7 +329,7 @@ namespace medea
     }
   }
 
-  void MedeaThread::FanoutMutation(Mapping &mapping)
+  void MedeaMapperThread::FanoutMutation(Mapping &mapping)
   {
     // Set spatial loops bounds to maximum possible
     for (uint32_t level = 0; level < mapping.loop_nest.storage_tiling_boundaries.size(); level++)
@@ -453,7 +453,7 @@ namespace medea
   }
 
   // Fill buffer at lower levels - Funziona solo con quelli che contengono un solo datatype per ora forse
-  void MedeaThread::FillMutation(model::Engine &engine, Mapping &mapping)
+  void MedeaMapperThread::FillMutation(model::Engine &engine, Mapping &mapping)
   {
     unsigned level = unsigned((arch_props_.StorageLevels() - 1) * exp_distribution_(rng_));
     level = (level == arch_props_.StorageLevels() - 1) ? arch_props_.StorageLevels() - 2 : level;
@@ -534,7 +534,7 @@ namespace medea
     // H = Stride * (Q - 1) + Dilation * (S - 1)
   }
 
-  void MedeaThread::RandomMutation(Mapping &mapping)
+  void MedeaMapperThread::RandomMutation(Mapping &mapping)
   {
     // Random loop factor swapping
     if (uni_distribution_(rng_) < 0.5)
@@ -619,7 +619,7 @@ namespace medea
     }
   }
 
-  void MedeaThread::Mutation(Individual &individual)
+  void MedeaMapperThread::Mutation(Individual &individual)
   {
     if (uni_distribution_(rng_) < fill_mutation_prob_ && individual.engine.IsEvaluated())
       FillMutation(individual.engine, individual.genome);
@@ -631,7 +631,7 @@ namespace medea
       RandomMutation(individual.genome);
   }
 
-  void MedeaThread::UpdateBestMapping()
+  void MedeaMapperThread::UpdateBestMapping()
   {
     std::unique_lock<std::mutex> lock(*global_mutex_);
     // Best update
@@ -651,7 +651,7 @@ namespace medea
     }
   }
 
-  void MedeaThread::RandomIndividual(uint32_t p, Population &population)
+  void MedeaMapperThread::RandomIndividual(uint32_t p, Population &population)
   {
     while (true)
     {
@@ -663,7 +663,7 @@ namespace medea
     }
   }
 
-  void MedeaThread::InjectUserDefinedMapping(Population &pop, uint32_t id)
+  void MedeaMapperThread::InjectUserDefinedMapping(Population &pop, uint32_t id)
   {
     // This should fix CoSA mapping fanout problems.
     for (uint32_t level = 0; level < user_mapping_.loop_nest.storage_tiling_boundaries.size(); level++)
@@ -699,7 +699,7 @@ namespace medea
     assert(Evaluate(user_mapping_, pop[id]));
   }
 
-  void MedeaThread::RandomPopulation(uint32_t p, uint32_t pop_slice_end, Population &population)
+  void MedeaMapperThread::RandomPopulation(uint32_t p, uint32_t pop_slice_end, Population &population)
   {
     while (p < pop_slice_end)
     {
@@ -712,7 +712,7 @@ namespace medea
     }
   }
 
-  uint64_t MedeaThread::Tournament()
+  uint64_t MedeaMapperThread::Tournament()
   {
     uint64_t b1 = tour_distribution_(rng_);
     uint64_t b2 = tour_distribution_(rng_);
@@ -734,7 +734,7 @@ namespace medea
     }
   }
 
-  MedeaThread::MedeaThread(
+  MedeaMapperThread::MedeaMapperThread(
       unsigned thread_id,
       config::CompoundConfig *config,
       std::string out_dir,
@@ -805,21 +805,21 @@ namespace medea
     best_individual_.fitness = -std::numeric_limits<double>::max();
   }
 
-  MedeaThread::~MedeaThread()
+  MedeaMapperThread::~MedeaMapperThread()
   {
   }
 
-  void MedeaThread::Start()
+  void MedeaMapperThread::Start()
   {
-    thread_ = std::thread(&MedeaThread::Run, this);
+    thread_ = std::thread(&MedeaMapperThread::Run, this);
   }
 
-  void MedeaThread::Join()
+  void MedeaMapperThread::Join()
   {
     thread_.join();
   }
 
-  void MedeaThread::Run()
+  void MedeaMapperThread::Run()
   {
 
     uint32_t slice_size = population_size_ / num_threads_;
