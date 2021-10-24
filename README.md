@@ -6,7 +6,7 @@ Multi-Objective Design Space Exploration framework leveraging [Timeloop](https:/
 Install dependancies
 ```
 sudo apt-get update
-sudo apt-get install libconfig++-dev libboost-dev libboost-iostreams-dev libboost-serialization-dev libyaml-cpp-dev  git build-essential python3-pip cmake
+sudo apt-get install git build-essential python3-pip cmake libboost-all-dev libconfig++-dev libyaml-cpp-dev 
 ```
 Install [Accelergy](https://github.com/Accelergy-Project/accelergy)
 ```

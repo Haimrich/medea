@@ -1,0 +1,13 @@
+medea:
+  num-threads: 6
+  num-generations: 15
+  immigrant-population-size: 0
+  population-size: 120
+  random-mutation-prob: 0.4
+  use-tournament: True
+  parallel-mutation-prob: 0.7
+  fill-mutation-prob: 0.7
+  workload-input-folder: "workloads"
+  output-folder: "output"
+  actual-layer-workload-lookup: [0,1,2,3,4,4,5,6]
+  same-workload-same-mapping: False

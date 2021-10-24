@@ -1,4 +1,5 @@
-#pragma once
+#ifndef MEDEA_COMMON_H_
+#define MEDEA_COMMON_H_
 
 #include <condition_variable>
 #include <vector>
@@ -7,28 +8,29 @@
 #include <algorithm>
 #include <fstream>
 
-
 #include "model/engine.hpp"
 #include "model/topology.hpp"
 #include "mapping/arch-properties.hpp"
-#include "mapspaces/mapspace-factory.hpp"
-#include "util/accelergy_interface.hpp"
+#include "mapspaces/mapspace-base.hpp"
 
 
-namespace medea {
+namespace medea
+{
 
-struct Individual {
-  Mapping genome;
-  model::Engine engine;
-  std::array<double, 3> objectives; // energy, latency, area
-  uint32_t rank;
-  double crowding_distance;
-  double fitness; // deprecated
-};
+  struct Individual
+  {
+    Mapping genome;
+    model::Engine engine;
+    std::array<double, 3> objectives; // energy, latency, area
+    uint32_t rank;
+    double crowding_distance;
+    double fitness; // deprecated
+  };
 
-typedef std::vector<Individual> Population;
+  typedef std::vector<Individual> Population;
 
-class Orchestrator {
+  class Orchestrator
+  {
   private:
     uint64_t max_workers_;
     std::mutex sync_mutex_;
@@ -36,35 +38,39 @@ class Orchestrator {
     std::condition_variable done_;
     uint64_t current_workers_ = 0;
     uint64_t current_iteration_ = 0;
-  public:
 
-    Orchestrator(uint64_t max_workers) : 
-      max_workers_(max_workers)
+  public:
+    Orchestrator(uint64_t max_workers) : max_workers_(max_workers)
     {
     }
 
-    void LeaderDone() {
+    void LeaderDone()
+    {
       std::unique_lock<std::mutex> lock(sync_mutex_);
       current_workers_ = max_workers_;
       ++current_iteration_;
       ready_.notify_all();
     }
 
-    void LeaderWait() {
+    void LeaderWait()
+    {
       std::unique_lock<std::mutex> lock(sync_mutex_);
-      done_.wait(lock, [&] { return current_workers_ == 0; });
+      done_.wait(lock, [&]
+                 { return current_workers_ == 0; });
     }
 
-    
-    void FollowerWait(uint64_t& next_iteration) {
+    void FollowerWait(uint64_t &next_iteration)
+    {
       std::unique_lock<std::mutex> lock(sync_mutex_);
-      ready_.wait(lock, [&] { return current_iteration_ == next_iteration; });
+      ready_.wait(lock, [&]
+                  { return current_iteration_ == next_iteration; });
       lock.unlock();
 
       ++next_iteration;
     }
 
-    void FollowerDone() {
+    void FollowerDone()
+    {
       std::unique_lock<std::mutex> lock(sync_mutex_);
       if (--(current_workers_) == 0)
       {
@@ -72,21 +78,23 @@ class Orchestrator {
         done_.notify_one();
       }
     }
+  };
 
-};
-
-template <class Iter>
-class Iterange {
+  template <class Iter>
+  class Iterange
+  {
     Iter start_;
     Iter end_;
-  public:
 
+  public:
     Iterange(Iter start, Iter end) : start_(start), end_(end) {}
 
     Iter begin() { return start_; }
     Iter end() { return end_; }
-};
+  };
 
-using LoopRange = Iterange<std::vector<loop::Descriptor>::const_iterator>;
+  using LoopRange = Iterange<std::vector<loop::Descriptor>::const_iterator>;
 
 }
+
+#endif // MEDEA_COMMON_H_

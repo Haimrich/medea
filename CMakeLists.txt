@@ -17,7 +17,7 @@ include(GNUInstallDirs)
 
 include_directories(
     ${PROJECT_SOURCE_DIR}/src 
-    ${PROJECT_SOURCE_DIR}/lib/timeloop/src 
+    ${PROJECT_SOURCE_DIR}/lib/timeloop/src
     ${PROJECT_SOURCE_DIR}/lib/timeloop/pat-public/src
 )
 
@@ -62,11 +62,12 @@ include_directories(${YAML_CPP_INCLUDE_DIRS})
 set(Boost_USE_STATIC_LIBS ON) 
 set(Boost_USE_MULTITHREADED ON)  
 set(Boost_USE_STATIC_RUNTIME OFF) 
-find_package(Boost REQUIRED COMPONENTS iostreams serialization)
+find_package(Boost REQUIRED COMPONENTS iostreams serialization program_options)
 message(STATUS "Boost version: ${Boost_VERSION}") 
 include_directories(${Boost_INCLUDE_DIRS}) 
 
-# Libraries
+# Linking
 target_link_libraries(medea ${Boost_LIBRARIES} ${YAML_CPP_LIBRARIES} ${CONFIG++_LIBRARY})
+target_link_options(medea PRIVATE -static-libgcc -static-libstdc++)
 
 install(TARGETS medea RUNTIME DESTINATION bin)
