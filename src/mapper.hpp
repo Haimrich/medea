@@ -44,9 +44,7 @@ namespace medea
     bool use_tournament_;
 
     Orchestrator *thread_orchestrator_;
-    std::mutex best_mutex_;
-
-    Individual best_individual_;
+    std::mutex global_mutex_;
 
     uint32_t num_threads_;
 

@@ -2,6 +2,7 @@
 
 #include <iomanip>
 #include <cmath>
+#include <chrono>
 
 #include "compound-config/compound-config.hpp"
 #include "util/numeric.hpp"
@@ -337,7 +338,7 @@ namespace medea
       std::string stats_filename = dir + "/" + out_prefix_ + ".stats." + std::string(max_digits - ind_id.length(), '0') + ind_id + ".txt";
 
       std::ofstream stats_file(stats_filename);
-      stats_file << best_individual_.engine << std::endl;
+      stats_file << ind.engine << std::endl;
       stats_file.close();
 
       count++;
@@ -346,10 +347,10 @@ namespace medea
 
   void MedeaMapper::Run()
   {
+    auto chrono_start = std::chrono::high_resolution_clock::now();
     // Output file names.
-    const std::string stats_file_name = out_dir_ + "/" + out_prefix_ + ".stats.txt";
-    const std::string map_txt_file_name = out_dir_ + "/" + out_prefix_ + ".map.txt";
-    const std::string pop_txt_file_name = out_dir_ + "/" + out_prefix_ + ".populations.txt";
+    const std::string stats_file_name = out_dir_ + "/medea.stats.txt";
+    const std::string pop_txt_file_name = out_dir_ + "/medea.populations.txt";
 
     // Thread Start
     std::vector<MedeaMapperThread *> threads_;
@@ -365,12 +366,11 @@ namespace medea
               arch_config_,
               mapspace_,
               constraints_,
-              &best_individual_,
               immigrant_population_,
               parent_population_,
               population_,
               thread_orchestrator_,
-              &best_mutex_,
+              &global_mutex_,
               num_threads_,
               population_size_,
               immigrant_population_size_,
@@ -427,11 +427,7 @@ namespace medea
       }
       std::cout << std::endl;
 
-      double mean = 0.0;
-      for (auto &i : parent_population_)
-        mean += i.fitness;
-      mean /= population_size_;
-      std::cout << "[INFO] Generation " << g << " done. Average Fitness: " << mean << std::endl;
+      std::cout << "[INFO] Generation " << g << " done." << std::endl;
 
       PrintGeneration(population_file, parent_population_, g);
       thread_orchestrator_->LeaderDone();
@@ -440,30 +436,17 @@ namespace medea
     // ============
     // Termination.
     // ============
-
     population_file.close();
 
-    if (best_individual_.engine.IsEvaluated())
-    {
-      std::ofstream map_txt_file(map_txt_file_name);
-      best_individual_.genome.PrettyPrint(map_txt_file, arch_specs_.topology.StorageLevelNames(),
-                                          best_individual_.engine.GetTopology().TileSizes());
-      map_txt_file.close();
+    auto chrono_end = std::chrono::high_resolution_clock::now();
+    auto chrono_duration = std::chrono::duration_cast<std::chrono::seconds>(chrono_end - chrono_start).count();
 
-      std::ofstream stats_file(stats_file_name);
-      stats_file << best_individual_.engine << std::endl;
-      stats_file.close();
+    std::ofstream stats_file(stats_file_name);
+    stats_file << "Search time: " << chrono_duration << " seconds" << std::endl;
+    stats_file.close();
 
-      std::cout << std::endl;
-      std::cout << "Summary stats for best mapping found by mapper:" << std::endl;
-      std::cout << "  Utilization = " << std::setw(4) << std::fixed << std::setprecision(2)
-                << best_individual_.engine.Utilization() << " | pJ/MACC = " << std::setw(8)
-                << std::fixed << std::setprecision(3) << best_individual_.engine.Energy() / best_individual_.engine.GetTopology().MACCs() << std::endl;
-    }
-    else
-    {
-      std::cout << "MESSAGE: no valid mappings found within search criteria." << std::endl;
-    }
+    std::cout << std::endl;
+    std::cout << "Search time: " << chrono_duration << " seconds" << std::endl;
 
     OutputParetoFrontStats();
   }

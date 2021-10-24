@@ -177,15 +177,7 @@ namespace medea
     individual.objectives[0] = engine.Energy();
     individual.objectives[1] = (double)engine.Cycles();
     individual.objectives[2] = engine.Area();
-    individual.fitness = Fitness(engine);
     individual.engine = engine;
-
-    // Best update
-    if (!best_individual_.engine.IsSpecced() || individual.fitness > best_individual_.fitness)
-    {
-      best_individual_ = individual;
-      assert(best_individual_.engine.GetTopology().MACCs() == individual.engine.GetTopology().MACCs());
-    }
 
     return true;
   }
@@ -631,26 +623,6 @@ namespace medea
       RandomMutation(individual.genome);
   }
 
-  void MedeaMapperThread::UpdateBestMapping()
-  {
-    std::unique_lock<std::mutex> lock(*global_mutex_);
-    // Best update
-    if (!global_best_individual_->engine.IsSpecced() || best_individual_.fitness > global_best_individual_->fitness)
-    {
-      *global_best_individual_ = best_individual_;
-
-      auto stats = best_individual_.engine.GetTopology().GetStats();
-      std::cout << "[INFO] Utilization = " << std::setw(4) << std::fixed << std::setprecision(2) << stats.utilization
-                << " | pJ/MACC = " << std::setw(8) << std::fixed << std::setprecision(3) << stats.energy / stats.maccs
-                << " | Cycles = " << std::setw(8) << std::fixed << std::setprecision(1) << stats.cycles
-                << " | Energy = " << std::setw(8) << std::fixed << std::setprecision(1) << stats.energy
-                << " | Fitness = " << std::setw(8) << std::fixed << std::setprecision(1) << best_individual_.fitness
-                << std::endl
-                << "[INFO] Mapping = " << best_individual_.genome.PrintCompact()
-                << std::endl;
-    }
-  }
-
   void MedeaMapperThread::RandomIndividual(uint32_t p, Population &population)
   {
     while (true)
@@ -743,7 +715,6 @@ namespace medea
       config::CompoundConfigNode arch_config,
       mapspace::MapSpace *mapspace,
       mapping::Constraints *constraints,
-      Individual *best_individual,
       std::vector<Individual> &immigrant_population,
       std::vector<Individual> &parent_population,
       std::vector<Individual> &population,
@@ -773,7 +744,6 @@ namespace medea
                                            arch_props_(arch_specs),
                                            mapspace_(mapspace),
                                            constraints_(constraints),
-                                           global_best_individual_(best_individual),
                                            immigrant_population_(immigrant_population),
                                            parent_population_(parent_population),
                                            population_(population),
@@ -802,7 +772,6 @@ namespace medea
                                            uni_distribution_(0, 1),
                                            tour_distribution_(0, population_size_ - 1)
   {
-    best_individual_.fitness = -std::numeric_limits<double>::max();
   }
 
   MedeaMapperThread::~MedeaMapperThread()
@@ -837,8 +806,6 @@ namespace medea
     RandomPopulation(pop_slice_start, pop_slice_end, parent_population_);
 
     thread_orchestrator_->FollowerDone();
-
-    UpdateBestMapping();
 
     // Wait for others
     thread_orchestrator_->FollowerWait(next_iteration_);
@@ -881,14 +848,11 @@ namespace medea
 
       std::cout << "[T" << thread_id_ << "] Successfully evaluated " << debug_cross_count << "/" << pop_slice_end - pop_slice_start << " crossed mappings." << std::endl;
 
-      UpdateBestMapping();
-
       // Immigration
       RandomPopulation(imm_pop_slice_start, imm_pop_slice_end, immigrant_population_);
 
       std::cout << "[T" << thread_id_ << "] Immigration completed" << std::endl;
       thread_orchestrator_->FollowerDone();
-      UpdateBestMapping();
 
       // Wait for others and merging in main
       thread_orchestrator_->FollowerWait(next_iteration_);

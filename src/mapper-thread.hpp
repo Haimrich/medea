@@ -26,7 +26,6 @@ namespace medea
     mapspace::MapSpace *mapspace_;
     mapping::Constraints *constraints_;
 
-    Individual *global_best_individual_;
     Population &immigrant_population_, &parent_population_, &population_;
 
     Orchestrator *thread_orchestrator_;
@@ -53,8 +52,6 @@ namespace medea
     std::exponential_distribution<double> exp_distribution_;
     std::uniform_real_distribution<double> uni_distribution_;
     std::uniform_int_distribution<uint64_t> tour_distribution_;
-
-    Individual best_individual_;
 
   protected:
 
@@ -93,8 +90,6 @@ namespace medea
 
     void Mutation(Individual &individual);
 
-    void UpdateBestMapping();
-
     void RandomIndividual(uint32_t p, Population &population);
 
     void InjectUserDefinedMapping(Population &pop, uint32_t id);
@@ -113,7 +108,6 @@ namespace medea
         config::CompoundConfigNode arch_config,
         mapspace::MapSpace *mapspace,
         mapping::Constraints *constraints,
-        Individual *best_individual,
         std::vector<Individual> &immigrant_population,
         std::vector<Individual> &parent_population,
         std::vector<Individual> &population,

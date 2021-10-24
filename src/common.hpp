@@ -23,7 +23,6 @@ namespace medea
     std::array<double, 3> objectives; // energy, latency, area
     uint32_t rank;
     double crowding_distance;
-    double fitness; // deprecated
   };
 
   typedef std::vector<Individual> Population;
