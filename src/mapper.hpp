@@ -87,7 +87,7 @@ namespace medea
 
     void PrintGeneration(std::ofstream &out, Population &pop, uint64_t gen_id);
 
-    void OutputParetoFrontStats();
+    void OutputParetoFrontFiles();
   };
 
 }

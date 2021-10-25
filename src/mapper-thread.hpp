@@ -57,8 +57,6 @@ namespace medea
 
     uint64_t gcd(uint64_t a, uint64_t b);
 
-    double Fitness(model::Engine engine);
-
     bool EngineSuccess(std::vector<model::EvalStatus> &status_per_level);
 
     bool RandomMapping(Mapping *mapping);
@@ -73,7 +71,7 @@ namespace medea
 
     uint64_t GetStrideInSubnest(problem::Shape::DimensionID dimension, std::vector<loop::Descriptor> &subnest);
 
-    void UpdateArchitecture(Mapping &mapping, model::Engine &engine);
+    void UpdateArchitecture(Mapping& mapping, model::Engine& engine, MinimalArchSpecs& arch);
 
     bool Evaluate(Mapping mapping, Individual &individual);
 

@@ -323,7 +323,7 @@ namespace medea
     out.flush();
   }
 
-  void MedeaMapper::OutputParetoFrontStats()
+  void MedeaMapper::OutputParetoFrontFiles()
   {
     std::string dir = out_dir_ + "/pareto";
     int max_digits = std::to_string(population_size_).length();
@@ -335,15 +335,21 @@ namespace medea
         continue;
 
       std::string ind_id = std::to_string(count);
-      std::string stats_filename = dir + "/" + out_prefix_ + ".stats." + std::string(max_digits - ind_id.length(), '0') + ind_id + ".txt";
 
+      std::string stats_filename = dir + "/" + out_prefix_ + ".stats." + std::string(max_digits - ind_id.length(), '0') + ind_id + ".txt";
       std::ofstream stats_file(stats_filename);
       stats_file << ind.engine << std::endl;
       stats_file.close();
 
+      std::string statsy_filename = dir + "/" + out_prefix_ + ".stats." + std::string(max_digits - ind_id.length(), '0') + ind_id + ".yaml";
+      std::ofstream statsy_file(statsy_filename);
+      statsy_file << ind << std::endl;
+      statsy_file.close();
+
       count++;
     }
   }
+
 
   void MedeaMapper::Run()
   {
@@ -448,7 +454,7 @@ namespace medea
     std::cout << std::endl;
     std::cout << "Search time: " << chrono_duration << " seconds" << std::endl;
 
-    OutputParetoFrontStats();
+    OutputParetoFrontFiles();
   }
 
 };
