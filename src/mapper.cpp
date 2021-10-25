@@ -16,8 +16,9 @@
 namespace medea
 {
 
-  MedeaMapper::MedeaMapper(config::CompoundConfig *config, std::string out_dir) : config_(config),
+  MedeaMapper::MedeaMapper(config::CompoundConfig *config, std::string out_dir, Accelergy &accelergy) : config_(config),
                                                                       out_dir_(out_dir),
+                                                                      accelergy_(accelergy),
                                                                       rng(rand_dev()),
                                                                       proba(0, 1)
   {
@@ -106,8 +107,6 @@ namespace medea
     medea.lookupValue("random-mutation-prob", random_mutation_prob_);
     use_tournament_ = false;
     medea.lookupValue("use-tournament", use_tournament_);
-    fast_accelergy_path_ = BUILD_BASE_DIR "/../../scripts/fast_accelergy.py";
-    medea.lookupValue("fast-accelergy-path", fast_accelergy_path_);
 
     std::cout << std::setprecision(3) << "Fill Mut. Prob.: " << fill_mutation_prob_ << " - Parallel Mut. Prob.: " << parallel_mutation_prob_ << " - Random Mut. Prob.: " << random_mutation_prob_ << " - Using tournament: " << use_tournament_ << std::endl;
 
@@ -385,7 +384,7 @@ namespace medea
               parallel_mutation_prob_,
               random_mutation_prob_,
               use_tournament_,
-              fast_accelergy_path_,
+              accelergy_,
               user_mapping_,
               user_mapping_defined_,
               if_rng_,

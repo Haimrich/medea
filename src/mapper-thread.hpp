@@ -39,7 +39,7 @@ namespace medea
 
     double fill_mutation_prob_, parallel_mutation_prob_, random_mutation_prob_;
     bool use_tournament_;
-    std::string fast_accelergy_path_;
+    Accelergy& accelergy_;
 
     Mapping user_mapping_;
     bool user_mapping_defined_;
@@ -119,7 +119,7 @@ namespace medea
         double parallel_mutation_prob,
         double random_mutation_prob,
         bool use_tournament,
-        std::string fast_accelergy_path,
+        Accelergy &accelergy,
         Mapping user_mapping,
         bool user_mapping_defined,
         RandomGenerator128 *if_rng,

@@ -16,6 +16,7 @@
 
 #include "common.hpp"
 #include "mapper-thread.hpp"
+#include "accelergy.hpp"
 
 namespace medea
 {
@@ -40,7 +41,7 @@ namespace medea
     Population population_, parent_population_, immigrant_population_, merged_population_;
 
     double fill_mutation_prob_, parallel_mutation_prob_, random_mutation_prob_;
-    std::string fast_accelergy_path_;
+    Accelergy &accelergy_;
     bool use_tournament_;
 
     Orchestrator *thread_orchestrator_;
@@ -67,7 +68,7 @@ namespace medea
 
   public:
   
-    MedeaMapper(config::CompoundConfig *config, std::string out_dir);
+    MedeaMapper(config::CompoundConfig *config, std::string out_dir, Accelergy &accelergy);
 
     ~MedeaMapper();
 

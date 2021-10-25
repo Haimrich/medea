@@ -97,7 +97,8 @@ int main(int argc, char *argv[])
     string out_dir = vm["output"].as<string>();
 
     auto pre_config = new config::CompoundConfig(input_files);
-    
+    Accelergy accelergy(pre_config);
+
     if (workloads.size()) { // Run Mapper for each workload 
       if (pre_config->getRoot().exists("problem")) {
         cerr << "Error: both a workload input directory and a workload input file were provided." << endl;
@@ -118,13 +119,13 @@ int main(int argc, char *argv[])
           return 1;
         } 
         
-        MedeaMapper mapper(config, out_dir + "/" + workload_name);
+        MedeaMapper mapper(config, out_dir + "/" + workload_name, accelergy);
         mapper.Run();
       }
 
     } else { // Run Mapper for the only workload provided
       fs::create_directories(out_dir + "/pareto");
-      MedeaMapper mapper(pre_config, out_dir);
+      MedeaMapper mapper(pre_config, out_dir, accelergy);
       mapper.Run();
     }
   }

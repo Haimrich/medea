@@ -12,10 +12,19 @@ namespace medea
   class Accelergy
   {
   protected:
-    config::CompoundConfigNode art_node;
-    config::CompoundConfigNode ert_node;
+    struct Entry {
+      YAML::Node energy;
+      YAML::Node area;
+    };
 
-  protected:
+    std::mutex cache_mutex_;
+    std::map<std::string, std::map<size_t, Entry>> cache_;
+    std::vector<Entry> invariant_nodes_;
+    bool invariant_nodes_inizialized_;
+
+    std::string fast_accelergy_path_;
+    config::CompoundConfig *config_;
+
     std::string Run(const char *cmd)
     {
       std::string result = "";
@@ -41,46 +50,119 @@ namespace medea
     }
 
   public:
-    Accelergy(std::string fast_accelergy_path, config::CompoundConfig *config, std::map<std::string, uint64_t> &updates, std::string out_prefix)
+    struct RT {
+      config::CompoundConfigNode energy;
+      config::CompoundConfigNode area;
+    };
+
+    Accelergy(config::CompoundConfig *config) :
+      invariant_nodes_inizialized_(false)
     {
-      std::vector<std::string> input_files = config->inFiles;
+      config_ = config;
+      fast_accelergy_path_ = BUILD_BASE_DIR;
+      fast_accelergy_path_ += "/../../scripts/fast_accelergy.py";
+      config->getRoot().lookup("medea").lookupValue("fast-accelergy-path", fast_accelergy_path_);
+    }
 
-      std::string cmd = "python " + fast_accelergy_path;
 
-      for (auto input_file : input_files)
-        cmd += " " + input_file;
+    RT GetReferenceTables(std::map<std::string, uint64_t> &updates, std::string out_prefix)
+    {
+      YAML::Node ynode = YAML::Node();
+      if (!FindInCache(updates, ynode)) {
 
-      cmd += " --oprefix " + out_prefix + ".";
-      cmd += " --updates ";
+        std::vector<std::string> input_files = config_->inFiles;
 
-      for (std::map<std::string, uint64_t>::iterator it = updates.begin(); it != updates.end(); it++)
-      {
-        cmd += " " + it->first + "," + std::to_string(it->second);
+        std::string cmd = "python " + fast_accelergy_path_;
+
+        for (auto input_file : input_files)
+          cmd += " " + input_file;
+
+        cmd += " --oprefix " + out_prefix + ". --updates ";
+
+        for (std::map<std::string, uint64_t>::iterator it = updates.begin(); it != updates.end(); it++)
+          cmd += " " + it->first + "," + std::to_string(it->second);
+
+        std::string fast_accelergy_out = Run(cmd.c_str());
+        if (fast_accelergy_out.length() == 0)
+        {
+          std::cout << "Failed to run Accelergy. Did you install Accelergy or specify ACCELERGYPATH correctly? Or check accelergy.log to see what went wrong" << std::endl;
+          exit(0);
+        }
+        ynode = YAML::Load(fast_accelergy_out);
+        if (!invariant_nodes_inizialized_) InizializeInvariantNodes(ynode, updates);
+
+        UpdateCache(ynode, updates);
+      }
+      
+      auto art_node = config::CompoundConfigNode(nullptr, ynode["ART"], config_);
+      auto ert_node = config::CompoundConfigNode(nullptr, ynode["ERT"], config_);
+
+      return (RT) {.energy = ert_node, .area = art_node};
+    }
+
+
+    void InizializeInvariantNodes(YAML::Node &acc_out, std::map<std::string, uint64_t> &updates) {
+      std::unique_lock<std::mutex> lock(cache_mutex_);
+      if (invariant_nodes_inizialized_) return;
+
+      for (std::size_t i = 0; i < acc_out["ART"]["tables"].size(); i++) {
+        auto name = acc_out["ART"]["tables"][i]["name"].as<std::string>();
+        name = name.substr(name.find_last_of(".") + 1);
+
+        if (updates.find(name) == updates.end())
+          invariant_nodes_.push_back((Entry){.energy = acc_out["ERT"]["tables"][i], .area = acc_out["ART"]["tables"][i]});
+      }
+      invariant_nodes_inizialized_ = true;
+    }
+
+
+    bool FindInCache(std::map<std::string, uint64_t> &updates, YAML::Node &root) {
+      YAML::Node art, ert;
+
+      cache_mutex_.lock();
+      try {
+        for (auto it = updates.begin(); it != updates.end(); it++)
+        {
+          Entry &entry = cache_.at(it->first).at(it->second);
+          art["tables"].push_back(entry.area);
+          ert["tables"].push_back(entry.energy);
+        }
+      }
+      catch (const std::out_of_range& oor) {
+        cache_mutex_.unlock();
+        return false;
+      }
+      cache_mutex_.unlock();
+
+      for (auto &e : invariant_nodes_) {
+        art["tables"].push_back(e.area);
+        ert["tables"].push_back(e.energy);
       }
 
-      //std::cout << "execute:" << cmd << std::endl;
+      art["version"] = 0.3;
+      ert["version"] = 0.3;
 
-      std::string fast_accelergy_out = Run(cmd.c_str());
-      if (fast_accelergy_out.length() == 0)
-      {
-        std::cout << "Failed to run Accelergy. Did you install Accelergy or specify ACCELERGYPATH correctly? Or check accelergy.log to see what went wrong" << std::endl;
-        exit(0);
+      root["ART"] = art;
+      root["ERT"] = ert;
+
+      //std::cout << "[INFO] Accelergy Cache Hit! " << std::endl;
+      return true;
+    }
+
+
+    void UpdateCache(YAML::Node &acc_out, std::map<std::string, uint64_t> &updates) {
+      std::unique_lock<std::mutex> lock(cache_mutex_);
+
+      for (std::size_t i = 0; i < acc_out["ART"]["tables"].size(); i++) {
+        auto name = acc_out["ART"]["tables"][i]["name"].as<std::string>();
+        name = name.substr(name.find_last_of(".") + 1);
+
+        auto size = updates.find(name);
+        if (size != updates.end())
+          cache_[name][size->second] = (Entry){.energy = acc_out["ERT"]["tables"][i], .area = acc_out["ART"]["tables"][i]};
       }
-      YAML::Node ynode = YAML::Load(fast_accelergy_out);
-
-      art_node = config::CompoundConfigNode(nullptr, ynode["ART"], config);
-      ert_node = config::CompoundConfigNode(nullptr, ynode["ERT"], config);
     }
 
-    config::CompoundConfigNode GetART()
-    {
-      return art_node;
-    }
-
-    config::CompoundConfigNode GetERT()
-    {
-      return ert_node;
-    }
   };
 
 }

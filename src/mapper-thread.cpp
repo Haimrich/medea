@@ -145,12 +145,12 @@ namespace medea
     }
 
     std::string out_prefix = "medea." + std::to_string(thread_id_) + "_tmp";
-    auto accelergy = Accelergy(fast_accelergy_path_, config_, updates, out_prefix);
+    Accelergy::RT rt = accelergy_.GetReferenceTables(updates, out_prefix);
 
     model::Engine::Specs new_engine_specs;
     new_engine_specs.topology = new_specs;
-    new_engine_specs.topology.ParseAccelergyART(accelergy.GetART());
-    new_engine_specs.topology.ParseAccelergyERT(accelergy.GetERT());
+    new_engine_specs.topology.ParseAccelergyART(rt.area);
+    new_engine_specs.topology.ParseAccelergyERT(rt.energy);
     engine.Spec(new_engine_specs);
 
     // Architectural updates for negotiator
@@ -750,7 +750,7 @@ namespace medea
       double parallel_mutation_prob,
       double random_mutation_prob,
       bool use_tournament,
-      std::string fast_accelergy_path,
+      Accelergy &accelergy,
       Mapping user_mapping,
       bool user_mapping_defined,
       RandomGenerator128 *if_rng,
@@ -779,7 +779,7 @@ namespace medea
                                            parallel_mutation_prob_(parallel_mutation_prob),
                                            random_mutation_prob_(random_mutation_prob),
                                            use_tournament_(use_tournament),
-                                           fast_accelergy_path_(fast_accelergy_path),
+                                           accelergy_(accelergy),
                                            user_mapping_(user_mapping),
                                            user_mapping_defined_(user_mapping_defined),
                                            inj_gen_(9),
