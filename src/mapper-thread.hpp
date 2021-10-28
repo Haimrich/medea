@@ -5,6 +5,7 @@
 #include "mapping/constraints.hpp"
 
 #include "common.hpp"
+#include "individual.hpp"
 #include "accelergy.hpp"
 
 namespace medea

@@ -1,6 +1,7 @@
 #ifndef MEDEA_ACCELERGY_H_
 #define MEDEA_ACCELERGY_H_
 
+#include <iostream>
 #include <string>
 #include <vector>
 #include <map>
@@ -85,6 +86,35 @@ namespace medea
       
       auto art_config = config::CompoundConfigNode(nullptr, art_node, config_);
       auto ert_config = config::CompoundConfigNode(nullptr, ert_node, config_);
+
+      return (RT) {.energy = ert_config, .area = art_config};
+    }
+
+
+    RT GetReferenceTables(std::string out_prefix)
+    {
+      YAML::Node ert_node = YAML::Node();
+      YAML::Node art_node = YAML::Node();
+
+      std::vector<std::string> input_files = config_->inFiles;
+
+      std::string cmd = "python " + fast_accelergy_path_;
+
+      for (auto input_file : input_files)
+        cmd += " " + input_file;
+
+      cmd += " --oprefix " + out_prefix + ".";
+
+      std::string fast_accelergy_out = Run(cmd.c_str());
+      if (fast_accelergy_out.length() == 0)
+      {
+        std::cout << "Failed to run Accelergy. Did you install Accelergy or specify ACCELERGYPATH correctly? Or check accelergy.log to see what went wrong" << std::endl;
+        exit(0);
+      }
+
+      YAML::Node acc_out = YAML::Load(fast_accelergy_out);
+      auto art_config = config::CompoundConfigNode(nullptr, acc_out["ART"], config_);
+      auto ert_config = config::CompoundConfigNode(nullptr, acc_out["ERT"], config_);
 
       return (RT) {.energy = ert_config, .area = art_config};
     }

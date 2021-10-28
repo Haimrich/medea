@@ -161,7 +161,7 @@ namespace medea
     for (unsigned j = 0; j < arch_specs_.topology.NumStorageLevels(); j++) {
       auto buffer = new_specs.GetStorageLevel(j);
       if (buffer->size.IsSpecified())
-        arch.add(buffer->name.Get(), buffer->meshX.Get(), buffer->meshY.Get(), buffer->size.Get(), buffer->effective_size.Get());
+        arch.add(buffer->name.Get(), buffer->meshX.Get(), buffer->meshY.Get(), buffer->size.Get());
     }
   }
 

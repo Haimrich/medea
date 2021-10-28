@@ -12,6 +12,7 @@
 #include "mapspaces/mapspace-factory.hpp"
 
 #include "common.hpp"
+#include "individual.hpp"
 
 namespace medea
 {
@@ -343,6 +344,8 @@ namespace medea
       std::string statsy_filename = dir + "/" + out_prefix_ + ".stats." + std::string(max_digits - ind_id.length(), '0') + ind_id + ".yaml";
       std::ofstream statsy_file(statsy_filename);
       statsy_file << ind << std::endl;
+      ArchProperties arch_props(arch_specs_);
+      ind.genome.DumpYaml(statsy_file, arch_specs_.topology.StorageLevelNames(), arch_props);
       statsy_file.close();
 
       count++;
@@ -356,6 +359,7 @@ namespace medea
     // Output file names.
     const std::string stats_file_name = out_dir_ + "/medea.stats.txt";
     const std::string pop_txt_file_name = out_dir_ + "/medea.populations.txt";
+    const std::string workload_file_name = out_dir_ + "/medea.workload.yaml";
 
     // Thread Start
     std::vector<MedeaMapperThread *> threads_;
@@ -449,6 +453,10 @@ namespace medea
     std::ofstream stats_file(stats_file_name);
     stats_file << "Search time: " << chrono_duration << " seconds" << std::endl;
     stats_file.close();
+
+    std::ofstream workload_file(workload_file_name);
+    workload_file << config_->getYConfig()["problem"] << std::endl;
+    workload_file.close();
 
     std::cout << std::endl;
     std::cout << "Search time: " << chrono_duration << " seconds" << std::endl;

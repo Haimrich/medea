@@ -23,14 +23,32 @@ int main(int argc, char *argv[])
   try
   {
 
-    po::options_description desc("MEDEA: A Multi-objective Evolutionary Approach to DNN Hardware Mapping\nAllowed options:");
+    po::options_description desc(
+      "MEDEA: A Multi-objective Evolutionary Approach to DNN Hardware Mapping\n"
+      "Allowed options"
+    );
     desc.add_options()
-      ("help", "produce help message")
-      ("input-files,i", po::value<vector<string>>(), "input files")
-      ("output,o", po::value<string>()->default_value("."), "output directory")
-      ("workload-dir,w", po::value<string>(), "workloads input directory")
-      ("lookup,l", po::value<vector<int>>()->multitoken(), "layer workload lookup")
+      ("help,h", "Print help information.")
+      ("input-files,i", po::value<vector<string>>(), 
+        "Input .yaml config files. These should specify paremeters about the architecture, "
+        "arch. components, datatype bypass, medea search. In map mode, if an input directory "
+        "is not specified, it is possible to provide a single workload file as input."
+      )
+      ("output,o", po::value<string>()->default_value("."), "Output directory")
+      ("input-dir,d", po::value<string>(), 
+        "Input directory. In default (map and negotiate) and map only mode this directory" 
+        "should contain a set of workload specifications .yaml file. In negotiate only "
+        "mode this directory should contain the output of a previous Medea mapping run.")
+      ("lookup,l", po::value<vector<unsigned>>()->multitoken(), 
+        "Layer workload lookup. Ex. -l 0 1 2 2 3 3 4 . This provide, for each actual network layer "
+        "(ex. AlexNet layers) the index of the workload in the input directory (in alphabetic order) "
+        "that matches its dimensions (filter sizes, number of channels, ecc.). This because some "
+        "layers in networks share the same dimensions and can be mapped once."
+      )
       ("map,m", "Map only, don't negotiate.")
+      ("negotiate,n", "Negotiate only, don't map.")
+      ("clean,c", "By default, if in the output folder there is already mapping output data for "
+       "a specific workload, Medea skips its mapping. To ignore previous run outputs use this flag.")
     ;
 
     po::positional_options_description p;
@@ -52,46 +70,19 @@ int main(int argc, char *argv[])
       return 0;
     }
 
-    vector<fs::path> workloads;
-    if (!vm.count("workload-dir")) {
-      cout << "Missing workload input folder. Searching for a workload in input files. \n";
-      // TODO
+    /* ==== Preparation ==== */
+
+    std::string input_dir;
+    fs::path input_dir_path;
+    if (vm.count("input-dir")) {
+      input_dir = vm["input-dir"].as<string>();
+      input_dir_path = fs::path(input_dir);
     } else {
-      fs::path workload_dir( vm["workload-dir"].as<string>() );
-
-      if (fs::exists(workload_dir) && fs::is_directory(workload_dir)) {
-        for (const auto & p : fs::directory_iterator(workload_dir))
-          if (fs::is_regular_file(p) && p.path().extension() == ".yaml")
-            workloads.emplace_back(p);
-            
-        sort(workloads.begin(), workloads.end());
-
-        if (workloads.size()) {
-          cout << "Found " << workloads.size() << " workloads in " << workload_dir.string() << endl; 
-        } else {
-          cerr << "Error: No workload found in " << workload_dir.string() << endl; 
-          return 1;
-        }
-        
-      } else {
-        cerr << "Error: " << workload_dir.string() << " : No such directory." << endl;
-        return 1;
-      }
+      input_dir = ".";
     }
 
-    if (vm.count("map"))
-    {
-      cout << "Mapping only. \n";
-      // TODO
-    }
-
-    
-
-    for (int i : vm["lookup"].as<vector<int>>())
-    {
-      cout << i << " ";
-    }
-    cout << "\n";
+    vector<unsigned> layer_workload_lookup = vm.count("lookup") ? 
+      vm["lookup"].as<vector<unsigned>>() : vector<unsigned>();
 
     vector<string> input_files = vm["input-files"].as<vector<string>>();
     string out_dir = vm["output"].as<string>();
@@ -99,35 +90,84 @@ int main(int argc, char *argv[])
     auto pre_config = new config::CompoundConfig(input_files);
     Accelergy accelergy(pre_config);
 
-    if (workloads.size()) { // Run Mapper for each workload 
-      if (pre_config->getRoot().exists("problem")) {
-        cerr << "Error: both a workload input directory and a workload input file were provided." << endl;
-        return 1;
+
+    /* ====  PER-WORKLOAD MAPPING PHASE  ==== */
+    if (!vm.count("negotiate")) {
+
+      vector<fs::path> workloads;
+      if (!vm.count("input-dir")) {
+        cout << "Missing workload input folder. Searching for a workload in input files." << endl;
+      } else {
+
+        if ( fs::is_directory(input_dir_path) ) {
+          for (const auto & p : fs::directory_iterator(input_dir_path))
+            if (fs::is_regular_file(p) && p.path().extension() == ".yaml")
+              workloads.emplace_back(p);
+              
+          sort(workloads.begin(), workloads.end());
+
+          if (workloads.size()) {
+            cout << "Found " << workloads.size() << " workloads in " << input_dir_path.string() << endl; 
+          } else {
+            cerr << "Error: No workload found in " << input_dir_path.string() << endl; 
+            return 1;
+          }
+        } else {
+          cerr << "Error: " << input_dir_path.string() << " : No such directory." << endl;
+          return 1;
+        }
       }
 
-      for (auto& workload : workloads) {
-        // TODO: Skip already mapped
-
-        string workload_name = workload.stem().string();
-        fs::create_directories(out_dir + "/" + workload_name + "/pareto");
-
-        vector<string> input_files_w = input_files;
-        input_files_w.push_back(workload.string());
-        auto config = new config::CompoundConfig(input_files_w); 
-        if (!config->getRoot().exists("problem")) {
-          cerr << "Error:  " + workload.string() + " is not a workload specification." << endl;
+      if (workloads.size()) { // Run Mapper for each workload 
+        if (pre_config->getRoot().exists("problem")) {
+          cerr << "Error: both a workload input directory and a workload input file provided." << endl;
           return 1;
-        } 
-        
-        MedeaMapper mapper(config, out_dir + "/" + workload_name, accelergy);
+        }
+
+        for (size_t i = 0; i < workloads.size(); i++) {
+          // TODO: Skip already mapped
+
+          cout << "[MEDEA] Started mapping of the workload " << i+1 << "/" << workloads.size() << "." << endl;
+
+          string workload_name = workloads[i].stem().string();
+          fs::create_directories(out_dir + "/" + workload_name + "/pareto");
+
+          vector<string> input_files_w = input_files;
+          input_files_w.push_back(workloads[i].string());
+          auto config = new config::CompoundConfig(input_files_w); 
+          if (!config->getRoot().exists("problem")) {
+            cerr << "Error:  " + workloads[i].string() + " is not a workload specification." << endl;
+            return 1;
+          } 
+          
+          MedeaMapper mapper(config, out_dir + "/" + workload_name, accelergy);
+          mapper.Run();
+
+          cout << "[MEDEA] Workload mapping completed." << endl;
+        }
+
+      } else { // Run Mapper for the only workload provided
+        fs::create_directories(out_dir + "/pareto");
+        MedeaMapper mapper(pre_config, out_dir, accelergy);
         mapper.Run();
       }
-
-    } else { // Run Mapper for the only workload provided
-      fs::create_directories(out_dir + "/pareto");
-      MedeaMapper mapper(pre_config, out_dir, accelergy);
-      mapper.Run();
     }
+
+    /* ==== END-TO-END NEGOTIATION PHASE ==== */
+    if (vm.count("map")) {
+      cout << "[MEDEA] Mapping only flag provided. Skipping negotiation." << endl;
+    } else {
+      if (!vm.count("negotiate")) input_dir = out_dir;
+      
+      MedeaNegotiator negotiator(pre_config, input_dir, layer_workload_lookup, out_dir, accelergy);
+      unsigned num_design_points = negotiator.Run();
+      
+      cout << "[MEDEA] Negotiation completed. " << num_design_points << " pareto design points found." << endl;
+    }
+
+
+    delete pre_config;
+  
   }
   catch (exception &e)
   {

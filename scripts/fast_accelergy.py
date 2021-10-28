@@ -60,7 +60,7 @@ def main():
     # ----- Interpret Commandline Arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('--oprefix', type =str, default = '')
-    parser.add_argument('--updates', nargs='*', type=buffer_depth_list)
+    parser.add_argument('--updates', nargs='*', default=[], type=buffer_depth_list)
     parser.add_argument('files', nargs='*')
 
     args = parser.parse_args()
