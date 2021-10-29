@@ -82,7 +82,16 @@ namespace medea
     Iter end() { return end_; }
   };
 
+
   using LoopRange = Iterange<std::vector<loop::Descriptor>::const_iterator>;
+
+
+  enum Dominance
+  {
+    DOMINATING,
+    DOMINATED,
+    FRONTIER
+  };
 
 }
 

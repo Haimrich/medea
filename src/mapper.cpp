@@ -175,7 +175,7 @@ namespace medea
       std::shuffle(std::begin(parent_population_), std::end(parent_population_), rng);
   }
 
-  MedeaMapper::Dominance MedeaMapper::CheckDominance(const Individual &a, const Individual &b)
+  Dominance MedeaMapper::CheckDominance(const Individual &a, const Individual &b)
   {
     bool all_a_less_or_equal_than_b = true;
     bool any_a_less_than_b = false;

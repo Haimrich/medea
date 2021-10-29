@@ -23,20 +23,55 @@ namespace medea
     std::vector<Level> levels;
 
   public:
-    void reset(size_t size)
+    void Reset(size_t size)
     {
       levels.clear();
       levels.reserve(size);
     }
 
-    void add(std::string name, int mesh_x, int mesh_y, int size)
+    void Add(std::string name, int mesh_x, int mesh_y, int size)
     {
       levels.push_back((Level){name, mesh_x, mesh_y, size});
     }
 
-    void add(std::string name, int mesh_x, int mesh_y)
+    void Add(std::string name, int mesh_x, int mesh_y)
     {
-      add(name, mesh_x, mesh_y, 0);
+      Add(name, mesh_x, mesh_y, 0);
+    }
+
+    Level GetLevel(size_t i) const {
+      return levels[i];
+    }
+
+    bool operator!=(const MinimalArchSpecs& other) 
+    {
+      for (size_t i = 0; i < std::min(levels.size(), other.levels.size()); i++) 
+      {
+        if (levels[i].mesh_x != other.levels[i].mesh_x) return true;
+        if (levels[i].mesh_y != other.levels[i].mesh_y) return true;
+        if (levels[i].size != other.levels[i].size) return true;
+      }
+      return false;
+    }
+
+    bool operator==(const MinimalArchSpecs& other) 
+    {
+      return !(*this != other);
+    }
+
+    MinimalArchSpecs operator&&(const MinimalArchSpecs& other)
+    {
+      MinimalArchSpecs out;
+      size_t bound = std::min(levels.size(), other.levels.size());
+      out.levels.resize(bound);
+      for (size_t i = 0; i < bound; i++) 
+      {
+        out.levels[i].name = levels[i].name;
+        out.levels[i].mesh_x = std::max(levels[i].mesh_x, other.levels[i].mesh_x);
+        out.levels[i].mesh_x = std::max(levels[i].mesh_y, other.levels[i].mesh_y);
+        out.levels[i].size = std::max(levels[i].size, other.levels[i].size);
+      }
+      return out;
     }
 
     friend YAML::Emitter &operator<<(YAML::Emitter &out, const MinimalArchSpecs &arch)
@@ -68,10 +103,10 @@ namespace medea
 
 
     MinimalArchSpecs(const YAML::Node &yaml) {
-      add(yaml[0]["name"].as<std::string>(), yaml[0]["mesh_x"].as<int>(), yaml[0]["mesh_y"].as<int>());
+      Add(yaml[0]["name"].as<std::string>(), yaml[0]["mesh_x"].as<int>(), yaml[0]["mesh_y"].as<int>());
 
       for (size_t i=1; i < yaml.size(); i++) 
-        add(yaml[i]["name"].as<std::string>(), yaml[i]["mesh_x"].as<int>(), yaml[i]["mesh_y"].as<int>(), yaml[i]["size"].as<int>());
+        Add(yaml[i]["name"].as<std::string>(), yaml[i]["mesh_x"].as<int>(), yaml[i]["mesh_y"].as<int>(), yaml[i]["size"].as<int>());
     }
 
     MinimalArchSpecs() = default;

@@ -81,8 +81,8 @@ int main(int argc, char *argv[])
       input_dir = ".";
     }
 
-    vector<unsigned> layer_workload_lookup = vm.count("lookup") ? 
-      vm["lookup"].as<vector<unsigned>>() : vector<unsigned>();
+    vector<size_t> layer_workload_lookup = vm.count("lookup") ? 
+      vm["lookup"].as<vector<size_t>>() : vector<size_t>();
 
     vector<string> input_files = vm["input-files"].as<vector<string>>();
     string out_dir = vm["output"].as<string>();

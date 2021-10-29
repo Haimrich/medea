@@ -154,14 +154,14 @@ namespace medea
     engine.Spec(new_engine_specs);
 
     // Architectural updates for negotiator
-    arch.reset(arch_specs_.topology.NumLevels());
+    arch.Reset(arch_specs_.topology.NumLevels());
     auto arithmetic = new_specs.GetArithmeticLevel();
-    arch.add(arithmetic->name.Get(), arithmetic->meshX.Get(), arithmetic->meshY.Get());
+    arch.Add(arithmetic->name.Get(), arithmetic->meshX.Get(), arithmetic->meshY.Get());
 
     for (unsigned j = 0; j < arch_specs_.topology.NumStorageLevels(); j++) {
       auto buffer = new_specs.GetStorageLevel(j);
       if (buffer->size.IsSpecified())
-        arch.add(buffer->name.Get(), buffer->meshX.Get(), buffer->meshY.Get(), buffer->size.Get());
+        arch.Add(buffer->name.Get(), buffer->meshX.Get(), buffer->meshY.Get(), buffer->size.Get());
     }
   }
 

@@ -56,13 +56,6 @@ namespace medea
     //std::default_random_engine rng;
     std::uniform_real_distribution<> proba;
 
-    enum Dominance
-    {
-      DOMINATING,
-      DOMINATED,
-      FRONTIER
-    };
-
     Mapping user_mapping_;
     bool user_mapping_defined_;
 
