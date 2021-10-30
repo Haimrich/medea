@@ -45,7 +45,9 @@ namespace medea
 
     bool operator!=(const MinimalArchSpecs& other) 
     {
-      for (size_t i = 0; i < std::min(levels.size(), other.levels.size()); i++) 
+      if (levels.size() != other.levels.size())
+        return true;
+      for (size_t i = 0; i < levels.size(); i++) 
       {
         if (levels[i].mesh_x != other.levels[i].mesh_x) return true;
         if (levels[i].mesh_y != other.levels[i].mesh_y) return true;
@@ -59,19 +61,43 @@ namespace medea
       return !(*this != other);
     }
 
-    MinimalArchSpecs operator&&(const MinimalArchSpecs& other)
+
+    MinimalArchSpecs& operator&=(const MinimalArchSpecs &other)
     {
+      auto bound = levels.size();
+  
+      /* This doesnt work because of things about in_mesh_x % mesh_x != 0
       MinimalArchSpecs out;
-      size_t bound = std::min(levels.size(), other.levels.size());
       out.levels.resize(bound);
+
       for (size_t i = 0; i < bound; i++) 
       {
         out.levels[i].name = levels[i].name;
         out.levels[i].mesh_x = std::max(levels[i].mesh_x, other.levels[i].mesh_x);
-        out.levels[i].mesh_x = std::max(levels[i].mesh_y, other.levels[i].mesh_y);
+        out.levels[i].mesh_y = std::max(levels[i].mesh_y, other.levels[i].mesh_y);
         out.levels[i].size = std::max(levels[i].size, other.levels[i].size);
       }
-      return out;
+      */
+
+      // Do this better
+      auto level_tmp = levels;
+
+      levels[bound - 1].mesh_x = std::max(level_tmp[bound - 1].mesh_x, other.levels[bound - 1].mesh_x);
+      levels[bound - 1].mesh_y = std::max(level_tmp[bound - 1].mesh_y, other.levels[bound - 1].mesh_y);
+
+      for (int i = bound - 2; i >= 0; i--)
+      {
+        levels[i].mesh_x = levels[i + 1].mesh_x * std::max(level_tmp[i].mesh_x / level_tmp[i + 1].mesh_x, other.levels[i].mesh_x / other.levels[i + 1].mesh_x);
+        levels[i].mesh_y = levels[i + 1].mesh_y * std::max(level_tmp[i].mesh_y / level_tmp[i + 1].mesh_y, other.levels[i].mesh_y / other.levels[i + 1].mesh_y);
+      }
+
+      for (size_t i = 0; i < bound; i++)
+      {
+        levels[i].name = other.levels[i].name;
+        levels[i].size = std::max(level_tmp[i].size, other.levels[i].size);
+      }
+
+      return *this;
     }
 
     friend YAML::Emitter &operator<<(YAML::Emitter &out, const MinimalArchSpecs &arch)

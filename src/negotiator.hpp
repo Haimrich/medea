@@ -30,36 +30,45 @@ namespace medea
   class NegotiatorIndividual 
   {
   private:
-    problem::Workload workload_;
-    std::vector<MedeaMapping> mapping_set;
-    MinimalArchSpecs negotiated_arch;
-    double area, energy, cycles;
+    std::vector<MedeaMapping> mapping_set_;
+    MinimalArchSpecs negotiated_arch_;
 
     std::mt19937* rng_;
     std::vector<model::Engine> set_engines_;
     std::vector<bool> need_evaluation_;
     model::Engine::Specs default_arch_specs_;
     model::Engine::Specs negotiated_arch_specs_;
-    Accelergy &accelergy_;
+    Accelergy* accelergy_;
 
     size_t num_layers_;
 
     bool NegotiateArchitecture();
 
-    void UpdateEngineArchitecture();
-
   public:
-    // Random Individual
-    NegotiatorIndividual(problem::Workload &workload, const std::vector<std::vector<MedeaMapping>> &mappings, 
-                         const std::vector<size_t> &lookup, model::Engine::Specs arch_specs, Accelergy &accelergy_);
 
-    void Evaluate(bool evaluate_all = false);
+    unsigned rank;
+    double crowding_distance;
 
-    void Mutate();
+    double objectives[3];
+    double& energy = objectives[0];
+    double& cycles = objectives[1];
+    double& area = objectives[2];
 
-    static void Crossover(const NegotiatorIndividual& parent_a, const NegotiatorIndividual& parent_b, NegotiatorIndividual& offspring_a, NegotiatorIndividual& offspring_b);
+    // Random Individual    
+    NegotiatorIndividual(std::mt19937* rng, std::vector<problem::Workload> &workloads, const std::vector<size_t> &lookup, 
+                         const std::vector<std::vector<MedeaMapping>> &mappings, model::Engine::Specs arch_specs, Accelergy *accelergy);
+
+    NegotiatorIndividual() = default;
+
+    void Evaluate(std::vector<problem::Workload> &workloads, const std::vector<size_t> &lookup);
+
+    void Mutate(double mutation_prob,  const std::vector<std::vector<MedeaMapping>> &mappings, const std::vector<size_t> &lookup);
+
+    static void Crossover(double crossover_prob, NegotiatorIndividual& offspring_a, NegotiatorIndividual& offspring_b);
 
     Dominance CheckDominance(const NegotiatorIndividual& other);
+
+    NegotiatorIndividual& operator=(const NegotiatorIndividual& m);
   };
 
 
@@ -86,10 +95,14 @@ namespace medea
     std::vector<std::vector<MedeaMapping>> workload_mappings_;
 
     unsigned num_threads_;
+    std::mt19937* rng_;
 
     unsigned num_generations_;
     size_t population_size_;
-    NegotiatorPopulation parent_population_, population_;
+    NegotiatorPopulation parent_population_, population_, merged_population_;
+
+    double mutation_prob_, individual_mutation_prob_;
+    double crossover_prob_, individual_crossover_prob_;
 
   public:
 
@@ -100,6 +113,12 @@ namespace medea
     unsigned Run();
 
   private:
+
+    void AssignRankAndCrowdingDistance(NegotiatorPopulation &population);
+
+    void AssignCrowdingDistance(NegotiatorPopulation &population, std::vector<size_t> &pareto_front);
+
+    void Merging();
 
     void Survival();
 

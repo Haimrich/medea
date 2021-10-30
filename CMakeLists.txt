@@ -6,7 +6,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 set(CMAKE_CXX_FLAGS "-Werror -Wall -Wextra -fmax-errors=1 -pthread -g")
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -DDEBUG")
+set(CMAKE_CXX_FLAGS_DEBUG "-Og -DDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 add_compile_definitions(USE_ACCELERGY BUILD_BASE_DIR="${CMAKE_SOURCE_DIR}/lib/timeloop")
 

@@ -19,7 +19,7 @@ int main(int argc, char *argv[])
   | |\/| | _|| |) | _| / _ \
   |_|  |_|___|___/|___/_/ \_\
   )" << endl;
-
+  
   try
   {
 
@@ -39,7 +39,7 @@ int main(int argc, char *argv[])
         "Input directory. In default (map and negotiate) and map only mode this directory" 
         "should contain a set of workload specifications .yaml file. In negotiate only "
         "mode this directory should contain the output of a previous Medea mapping run.")
-      ("lookup,l", po::value<vector<unsigned>>()->multitoken(), 
+      ("lookup,l", po::value<vector<size_t>>()->multitoken(), 
         "Layer workload lookup. Ex. -l 0 1 2 2 3 3 4 . This provide, for each actual network layer "
         "(ex. AlexNet layers) the index of the workload in the input directory (in alphabetic order) "
         "that matches its dimensions (filter sizes, number of channels, ecc.). This because some "
@@ -179,7 +179,7 @@ int main(int argc, char *argv[])
     cerr << "Exception of unknown type!" << endl;
     return 1;
   }
-
+  
   return 0;
 }
 
