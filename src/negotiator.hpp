@@ -3,77 +3,49 @@
 
 #include "compound-config/compound-config.hpp"
 #include "model/engine.hpp"
-#include "mapping.hpp"
 
 #include "common.hpp"
 #include "individual.hpp"
 #include "accelergy.hpp"
+#include "mapping.hpp"
 
 
 namespace medea
 {
 
-  class MedeaMapping 
+  class MedeaMapping
   {
-    public:
-      unsigned id = 0;
-      MinimalArchSpecs arch;
-      Mapping mapping;
-      double area, energy, cycles;
+  public:
+    unsigned id = 0;
+    MinimalArchSpecs arch;
+    Mapping mapping;
+    double area, energy, cycles;
 
-      MedeaMapping() = default;
-      MedeaMapping(unsigned id, config::CompoundConfig &config, model::Engine::Specs &arch_specs, problem::Workload &workload);
-
+    MedeaMapping() = default;
+    MedeaMapping(unsigned id, config::CompoundConfig &config, model::Engine::Specs &arch_specs, problem::Workload &workload);
   };
 
-
-  class NegotiatorIndividual 
+  struct NegotiatorIndividual
   {
-  private:
-    std::vector<MedeaMapping> mapping_set_;
-    MinimalArchSpecs negotiated_arch_;
 
-    std::mt19937* rng_;
-    std::vector<model::Engine> set_engines_;
-    std::vector<bool> need_evaluation_;
-    model::Engine::Specs default_arch_specs_;
-    model::Engine::Specs negotiated_arch_specs_;
-    Accelergy* accelergy_;
+    struct Eval
+    {
+      double energy, cycles;
+      bool need_evaluation;
+    };
 
-    size_t num_layers_;
+    std::vector<size_t> mapping_id_set;
+    std::vector<Eval> mapping_evaluations;
 
-    bool NegotiateArchitecture();
-
-  public:
+    MinimalArchSpecs negotiated_arch;
+    model::Engine::Specs negotiated_arch_specs;
 
     unsigned rank;
     double crowding_distance;
-
-    double objectives[3];
-    double& energy = objectives[0];
-    double& cycles = objectives[1];
-    double& area = objectives[2];
-
-    // Random Individual    
-    NegotiatorIndividual(std::mt19937* rng, std::vector<problem::Workload> &workloads, const std::vector<size_t> &lookup, 
-                         const std::vector<std::vector<MedeaMapping>> &mappings, model::Engine::Specs arch_specs, Accelergy *accelergy);
-
-    NegotiatorIndividual() = default;
-
-    void Evaluate(std::vector<problem::Workload> &workloads, const std::vector<size_t> &lookup);
-
-    void Mutate(double mutation_prob,  const std::vector<std::vector<MedeaMapping>> &mappings, const std::vector<size_t> &lookup);
-
-    static void Crossover(double crossover_prob, NegotiatorIndividual& offspring_a, NegotiatorIndividual& offspring_b);
-
-    Dominance CheckDominance(const NegotiatorIndividual& other);
-
-    NegotiatorIndividual& operator=(const NegotiatorIndividual& m);
+    std::array<double, 3> objectives; // Energy, Cycles, Area
   };
 
-
   typedef std::vector<NegotiatorIndividual> NegotiatorPopulation;
-
 
   class MedeaNegotiator
   {
@@ -93,7 +65,7 @@ namespace medea
 
     std::vector<problem::Workload> workloads_;
     std::vector<std::vector<MedeaMapping>> workload_mappings_;
-
+    
     unsigned num_threads_;
     std::mt19937* rng_;
 
@@ -103,6 +75,8 @@ namespace medea
 
     double mutation_prob_, individual_mutation_prob_;
     double crossover_prob_, individual_crossover_prob_;
+
+    size_t num_layers_;
 
   public:
 
@@ -121,6 +95,22 @@ namespace medea
     void Merging();
 
     void Survival();
+
+    unsigned OutputParetoFrontFiles();
+
+  private:
+  
+    NegotiatorIndividual RandomIndividual();
+
+    void EvaluateIndividual(NegotiatorIndividual &individual);
+
+    bool NegotiateArchitecture(NegotiatorIndividual &individual);
+
+    void MutateIndividual(NegotiatorIndividual &individual);
+
+    void Crossover(NegotiatorIndividual &offspring_a, NegotiatorIndividual &offspring_b);
+
+    Dominance CheckDominance(const NegotiatorIndividual &a, const NegotiatorIndividual &b);
 
   };
 

@@ -5,7 +5,6 @@
 
 #include "compound-config/compound-config.hpp"
 #include "model/engine.hpp"
-#include "mapping/parser.hpp"
 
 #include "common.hpp"
 #include "accelergy.hpp"
@@ -64,10 +63,10 @@ namespace medea
 
     workload_mappings_.reserve(workloads_files_paths.size());
     for (auto& workload_file : workloads_files_paths) {
-
-      YAML::Node workload_yaml = YAML::LoadFile(workload_file.string());
       problem::Workload workload;
-      problem::ParseWorkload(config::CompoundConfigNode(nullptr, workload_yaml, config), workload);
+      config::CompoundConfig workload_config(workload_file.c_str());
+      problem::ParseWorkload(workload_config.getRoot(), workload);
+
       workloads_.push_back(workload);
 
       fs::path workload_pareto_folder = workload_file.parent_path() / "pareto";
@@ -104,9 +103,6 @@ namespace medea
     medea.lookupValue("negotiator-population-size", population_size);
     population_size_ = population_size + population_size % 2;
 
-    parent_population_ = std::vector<NegotiatorIndividual>(population_size_, {rng_, workloads_, layer_workload_lookup_, workload_mappings_, default_arch_, &accelergy_});
-    merged_population_.resize(2*population_size_);
-
     num_generations_ = 20;
     medea.lookupValue("negotiator-num-generations", num_generations_);
 
@@ -117,7 +113,18 @@ namespace medea
     crossover_prob_ = 0.4;
     medea.lookupValue("negotiator-crossover-prob", crossover_prob_);
     individual_crossover_prob_ = 0.4;
-    medea.lookupValue("negotiator-idnividual-crossover-prob", individual_crossover_prob_);
+    medea.lookupValue("negotiator-indvidual-crossover-prob", individual_crossover_prob_);
+
+    num_layers_ = lookup.size();
+
+    parent_population_.reserve(population_size_);
+    for (size_t p = 0; p < population_size_; p++) {
+      NegotiatorIndividual ind = RandomIndividual();
+      EvaluateIndividual(ind);
+      parent_population_.push_back(ind);   
+    }
+
+    merged_population_.resize(2*population_size_);
   }
 
 
@@ -130,16 +137,19 @@ namespace medea
       population_ = parent_population_;
 
       std::uniform_real_distribution<double> dice(0, 1);
+
       for (size_t p = 0; p < population_size_; p += 2)
       {
         if (dice(*rng_) < crossover_prob_)
-          NegotiatorIndividual::Crossover(individual_crossover_prob_, population_[p], population_[p+1]);
+          Crossover(population_[p], population_[p+1]);
 
-        if (dice(*rng_) < mutation_prob_) population_[p].Mutate(individual_mutation_prob_, workload_mappings_, layer_workload_lookup_);
-        if (dice(*rng_) < mutation_prob_) population_[p+1].Mutate(individual_mutation_prob_, workload_mappings_, layer_workload_lookup_);
+        if (dice(*rng_) < mutation_prob_) 
+          MutateIndividual(population_[p]);
+        if (dice(*rng_) < mutation_prob_) 
+          MutateIndividual(population_[p+1]);
 
-        population_[p].Evaluate(workloads_, layer_workload_lookup_);
-        population_[p+1].Evaluate(workloads_, layer_workload_lookup_);
+        EvaluateIndividual(population_[p]);
+        EvaluateIndividual(population_[p+1]);
       }
       
       Merging();
@@ -147,8 +157,50 @@ namespace medea
       Survival();
       
       std::cout << "[INFO] Generation " << g << " completed." << std::endl;
+      std::cout << "[RANK]" << std::endl;
+      for (auto& ind : parent_population_) 
+        std::cout << ind.rank << "\t" << ind.objectives[0] << "\t" << ind.objectives[1] << "\t" << ind.objectives[2] << std::endl;
+      std::cout << "[SIZE] " << parent_population_.size() << std::endl;
     }
-    return 0;
+
+    return OutputParetoFrontFiles();
+  }
+
+
+
+  unsigned MedeaNegotiator::OutputParetoFrontFiles()
+  {
+    std::string dir = out_dir_ + "/negotiated_pareto";
+    int max_digits_inds = std::to_string(population_size_).length();
+    int max_digits_layers = std::to_string(layer_workload_lookup_.size()).length();
+
+    unsigned p = 0;
+    for (auto& ind : parent_population_)
+    {
+      if (ind.rank) continue;
+
+      std::string ind_id = std::to_string(p+1);
+      std::string ind_out_path = dir + "/" + std::string(max_digits_inds - ind_id.length(), '0') + ind_id + "/";
+      fs::create_directories(ind_out_path);
+
+      model::Engine engine;
+      engine.Spec(ind.negotiated_arch_specs);
+
+      for (size_t l = 0; l < layer_workload_lookup_.size(); l++) 
+      {
+        engine.Evaluate(workload_mappings_[layer_workload_lookup_[l]][ind.mapping_id_set[l]].mapping, workloads_[layer_workload_lookup_[l]]);
+        assert(engine.IsEvaluated());
+        
+        std::string layer_id = std::to_string(l);
+        std::string stats_filename = ind_out_path + "/medea.negotiator.stats." + std::string(max_digits_layers - layer_id.length(), '0') + layer_id + ".txt";
+        std::ofstream stats_file(stats_filename);
+        stats_file << engine << std::endl;
+        stats_file.close();
+      }
+
+      p++;
+    }
+    return p;
   }
 
 
@@ -177,7 +229,7 @@ namespace medea
     {
       for (uint64_t j = i + 1; j < population.size(); j++)
       {
-        switch (population[i].CheckDominance(population[j]))
+        switch (CheckDominance(population[i], population[j]))
         {
         case Dominance::DOMINATING:
           dominated_by[i].push_back(j);
@@ -228,12 +280,12 @@ namespace medea
 
   void MedeaNegotiator::AssignCrowdingDistance(NegotiatorPopulation &population, std::vector<size_t> &pareto_front)
   {
-    for (auto p : pareto_front)
+    for (size_t p : pareto_front)
       population[p].crowding_distance = 0.0;
 
     for (unsigned i = 0; i < 3; i++)
     {
-      std::sort(pareto_front.begin(), pareto_front.end(), [&](const uint64_t a, const uint64_t b) -> bool
+      std::sort(pareto_front.begin(), pareto_front.end(), [&](const size_t a, const size_t b) -> bool
                 { return population[a].objectives[i] < population[b].objectives[i]; });
 
       population[pareto_front.front()].crowding_distance = 10e14;
@@ -242,11 +294,11 @@ namespace medea
       double range = population[pareto_front.back()].objectives[i] - population[pareto_front.front()].objectives[i];
       assert(range >= 0);
 
-      for (uint64_t j = 1; j < pareto_front.size() - 1; j++)
+      for (size_t j = 1; j < pareto_front.size() - 1; j++)
       {
-        uint64_t r_prev = pareto_front[j - 1];
-        uint64_t r_next = pareto_front[j + 1];
-        uint64_t r_this = pareto_front[j];
+        size_t r_prev = pareto_front[j - 1];
+        size_t r_next = pareto_front[j + 1];
+        size_t r_this = pareto_front[j];
         population[r_this].crowding_distance += std::abs(population[r_next].objectives[i] - population[r_prev].objectives[i]) / range;
       }
     }
@@ -270,69 +322,38 @@ namespace medea
   }
 
 
-  MedeaNegotiator::~MedeaNegotiator()
+
+  NegotiatorIndividual MedeaNegotiator::RandomIndividual()
   {
-    delete rng_;
-    delete thread_orchestrator_;
-  }
+    NegotiatorIndividual out;
+    out.mapping_id_set.reserve(num_layers_);
+    out.mapping_evaluations.resize(num_layers_);
 
-
-  MedeaMapping::MedeaMapping(unsigned id, config::CompoundConfig &config, model::Engine::Specs &arch_specs, problem::Workload &workload) : id(id)
-  {
-
-    auto root = config.getRoot();
-
-    arch = MinimalArchSpecs(root.lookup("arch").getYNode());
-
-    mapping = mapping::ParseAndConstructFixed(root.lookup("mapping"), arch_specs, workload);
-
-    auto stats = root.lookup("stats");
-    stats.lookupValue("energy", energy);
-    stats.lookupValue("cycles", cycles);
-    stats.lookupValue("area", area);
-  }
-
-
-  NegotiatorIndividual::NegotiatorIndividual(std::mt19937* rng, std::vector<problem::Workload> &workloads, const std::vector<size_t> &lookup, 
-                                             const std::vector<std::vector<MedeaMapping>> &mappings, model::Engine::Specs arch_specs, Accelergy* accelergy) : 
-                                             rng_(rng), default_arch_specs_(arch_specs)
-  {
-    accelergy_ = accelergy;
-    num_layers_ = lookup.size();
-    mapping_set_.reserve(num_layers_);
-    need_evaluation_.resize(num_layers_, true);
-    set_engines_.resize(num_layers_);
-
-    std::uniform_int_distribution<size_t> uni_dist(0, mappings[0].size()-1);
-    auto m = mappings[0][uni_dist(*rng_)];
-    mapping_set_.push_back(m);
-
-    for (size_t l = 1; l < num_layers_; l++)
+    for (size_t l = 0; l < num_layers_; l++)
     {
-      size_t workload_id = lookup[l];
-      uni_dist = std::uniform_int_distribution<size_t>(0, mappings[workload_id].size()-1);
-      m = mappings[workload_id][uni_dist(*rng_)];
-      mapping_set_.push_back(m);
+      size_t workload_id = layer_workload_lookup_[l];
+      std::uniform_int_distribution<size_t> uni_dist(0, workload_mappings_[workload_id].size() - 1);
+      out.mapping_id_set.push_back(uni_dist(*rng_));
+      out.mapping_evaluations[l].need_evaluation = true;
     }
 
-    Evaluate(workloads, lookup);
+    return out;
   }
 
-
-  bool NegotiatorIndividual::NegotiateArchitecture() 
+  bool MedeaNegotiator::NegotiateArchitecture(NegotiatorIndividual& ind)
   {
-    auto old_negotiated_arch = negotiated_arch_;
-    
-    negotiated_arch_ = mapping_set_[0].arch;
-    for (size_t i = 0; i < num_layers_; i++)
-      negotiated_arch_ &= mapping_set_[i].arch;
+    auto old_negotiated_arch = ind.negotiated_arch;
 
-    if (old_negotiated_arch == negotiated_arch_) 
+    ind.negotiated_arch = workload_mappings_[layer_workload_lookup_[0]][ind.mapping_id_set[0]].arch;
+    for (size_t l = 0; l < num_layers_; l++)
+      ind.negotiated_arch &= workload_mappings_[layer_workload_lookup_[l]][ind.mapping_id_set[l]].arch;
+
+    if (old_negotiated_arch == ind.negotiated_arch)
       return false;
 
-    auto new_specs = model::Topology::Specs(default_arch_specs_.topology);
+    auto new_specs = model::Topology::Specs(default_arch_.topology);
 
-    auto minimal_arithmetic = negotiated_arch_.GetLevel(0);
+    auto minimal_arithmetic = ind.negotiated_arch.GetLevel(0);
     auto arithmetic = new_specs.GetArithmeticLevel();
     arithmetic->meshX = minimal_arithmetic.mesh_x;
     arithmetic->meshY = minimal_arithmetic.mesh_y;
@@ -340,96 +361,102 @@ namespace medea
 
     std::map<std::string, uint64_t> updates;
 
-    for (unsigned i = 1; i < default_arch_specs_.topology.NumLevels();  i++)
+    for (unsigned i = 1; i < default_arch_.topology.NumLevels(); i++)
     {
       auto buffer = new_specs.GetStorageLevel(i - 1);
-      if (!buffer->size.IsSpecified()) continue;
+      if (!buffer->size.IsSpecified())
+        continue;
 
-      auto minimal_buffer = negotiated_arch_.GetLevel(i);
+      auto minimal_buffer = ind.negotiated_arch.GetLevel(i);
       buffer->meshX = minimal_buffer.mesh_x;
       buffer->meshY = minimal_buffer.mesh_y;
       buffer->instances = minimal_buffer.mesh_x * minimal_buffer.mesh_y;
       buffer->size = minimal_buffer.size;
       buffer->effective_size = static_cast<uint64_t>(std::floor(minimal_buffer.size / buffer->multiple_buffering.Get()));
-    
+
       updates[buffer->name.Get()] = buffer->size.Get() / buffer->block_size.Get();
     }
 
     //std::string out_prefix = "medea." + std::to_string(thread_id_) + "_tmp";
     std::string out_prefix = "medea.tmp";
-    Accelergy::RT rt = accelergy_->GetReferenceTables(updates, out_prefix);
+    Accelergy::RT rt = accelergy_.GetReferenceTables(updates, out_prefix);
 
-    negotiated_arch_specs_.topology = new_specs;
-    negotiated_arch_specs_.topology.ParseAccelergyART(rt.area);
-    negotiated_arch_specs_.topology.ParseAccelergyERT(rt.energy);
+    ind.negotiated_arch_specs.topology = new_specs;
+    ind.negotiated_arch_specs.topology.ParseAccelergyART(rt.area);
+    ind.negotiated_arch_specs.topology.ParseAccelergyERT(rt.energy);
 
     return true;
   }
 
+  void MedeaNegotiator::EvaluateIndividual(NegotiatorIndividual &ind)
+  {
+    bool arch_changed = NegotiateArchitecture(ind);
+    model::Engine engine;
+    engine.Spec(ind.negotiated_arch_specs);
 
-  void NegotiatorIndividual::Evaluate(std::vector<problem::Workload> &workloads, const std::vector<size_t> &lookup) {
-    bool arch_changed = NegotiateArchitecture();
-    
     for (size_t i = 0; i < num_layers_; i++)
-      if (need_evaluation_[i] || arch_changed) 
+      if (ind.mapping_evaluations[i].need_evaluation || arch_changed)
       {
-        set_engines_[i].Spec(negotiated_arch_specs_);
-        auto status = set_engines_[i].Evaluate(mapping_set_[i].mapping, workloads[lookup[i]]);
-        if (!set_engines_[i].IsEvaluated()) {
-          std::cout << "Error in workload " << lookup[i] << " with mapping " << mapping_set_[i].mapping.id << std::endl;
-          for (auto& s : status)
+        auto status = engine.Evaluate(workload_mappings_[layer_workload_lookup_[i]][ind.mapping_id_set[i]].mapping, workloads_[layer_workload_lookup_[i]]);
+
+        if (!engine.IsEvaluated())
+        {
+          std::cout << "Error in workload " << layer_workload_lookup_[i] << " with mapping ";
+          std::cout << workload_mappings_[layer_workload_lookup_[i]][ind.mapping_id_set[i]].mapping.id << std::endl;
+
+          for (auto &s : status)
             std::cout << s.success << " " << s.fail_reason << std::endl;
           YAML::Emitter yout;
-          yout << negotiated_arch_;
+          yout << ind.negotiated_arch;
           std::cout << yout.c_str() << std::endl;
           exit(1);
         }
-        need_evaluation_[i] = false;
+
+        ind.mapping_evaluations[i].energy = engine.Energy();
+        ind.mapping_evaluations[i].cycles = engine.Cycles();
+        ind.mapping_evaluations[i].need_evaluation = false;
       }
 
-    energy = 0;
-    cycles = 0;
-    area = set_engines_[0].Area();
+    ind.objectives[0] = 0;
+    ind.objectives[1] = 0;
+    ind.objectives[2] = engine.Area();
 
-    for (size_t i = 0; i < num_layers_; i++) 
+    for (size_t i = 0; i < num_layers_; i++)
     {
-      energy += set_engines_[i].Energy();
-      cycles += set_engines_[i].Cycles();
+      ind.objectives[0] += ind.mapping_evaluations[i].energy;
+      ind.objectives[1] += ind.mapping_evaluations[i].cycles;
     }
   }
 
-
-  void NegotiatorIndividual::Mutate(double mutation_prob, const std::vector<std::vector<MedeaMapping>> &mappings, const std::vector<size_t> &lookup) 
+  void MedeaNegotiator::MutateIndividual(NegotiatorIndividual &ind)
   {
     std::uniform_real_distribution<double> dice(0, 1);
 
-    for (size_t l = 0; l < num_layers_; l++) 
-      if (dice(*rng_) < mutation_prob) 
+    for (size_t l = 0; l < num_layers_; l++)
+      if (dice(*rng_) < individual_mutation_prob_)
       {
-        size_t workload_id = lookup[l];
-        std::uniform_int_distribution<size_t> uni_dist(0, mappings[workload_id].size()-1);
-        mapping_set_[l] =  mappings[workload_id][uni_dist(*rng_)];
-        need_evaluation_[l] = true;
+        size_t workload_id = layer_workload_lookup_[l];
+        std::uniform_int_distribution<size_t> uni_dist(0, workload_mappings_[workload_id].size() - 1);
+        ind.mapping_id_set[l] = uni_dist(*rng_);
+        ind.mapping_evaluations[l].need_evaluation = true;
       }
   }
 
-
-  void NegotiatorIndividual::Crossover(double crossover_prob, NegotiatorIndividual& offspring_a, NegotiatorIndividual& offspring_b)
+  void MedeaNegotiator::Crossover(NegotiatorIndividual &offspring_a, NegotiatorIndividual &offspring_b)
   {
     std::uniform_real_distribution<double> dice(0, 1);
 
-    for (size_t l = 0; l < offspring_a.num_layers_; l++) 
-      if (dice(*(offspring_a.rng_)) < crossover_prob) 
+    for (size_t l = 0; l < num_layers_; l++)
+      if (dice(*rng_) < individual_crossover_prob_)
       {
-        std::swap(offspring_a.mapping_set_[l], offspring_b.mapping_set_[l]);
-        
-        offspring_a.need_evaluation_[l] = true;
-        offspring_b.need_evaluation_[l] = true;
+        std::swap(offspring_a.mapping_id_set[l], offspring_b.mapping_id_set[l]);
+
+        offspring_a.mapping_evaluations[l].need_evaluation = true;
+        offspring_b.mapping_evaluations[l].need_evaluation = true;
       }
   }
 
-
-  Dominance NegotiatorIndividual::CheckDominance(const NegotiatorIndividual &other)
+  Dominance MedeaNegotiator::CheckDominance(const NegotiatorIndividual &a, const NegotiatorIndividual &b)
   {
     bool all_a_less_or_equal_than_b = true;
     bool any_a_less_than_b = false;
@@ -438,12 +465,12 @@ namespace medea
 
     for (unsigned i = 0; i < 3; i++)
     {
-      if (objectives[i] > other.objectives[i])
+      if (a.objectives[i] > b.objectives[i])
       {
         all_a_less_or_equal_than_b = false;
         any_b_less_than_a = true;
       }
-      else if (other.objectives[i] > objectives[i])
+      else if (b.objectives[i] > a.objectives[i])
       {
         any_a_less_than_b = true;
         all_b_less_or_equal_than_a = false;
@@ -458,8 +485,10 @@ namespace medea
     return Dominance::FRONTIER;
   }
 
-
-  NegotiatorIndividual& NegotiatorIndividual::operator=(const NegotiatorIndividual& other) {
+/*
+  NegotiatorIndividual &NegotiatorIndividual::operator=(const NegotiatorIndividual &other)
+  {
+    num_layers_ = other.num_layers_;
     mapping_set_ = other.mapping_set_;
     negotiated_arch_ = other.negotiated_arch_;
     rng_ = other.rng_;
@@ -469,10 +498,34 @@ namespace medea
     negotiated_arch_specs_ = other.negotiated_arch_specs_;
     accelergy_ = other.accelergy_;
 
-    objectives[0] = other.objectives[0];
-    objectives[1] = other.objectives[1];
-    objectives[2] = other.objectives[2];
+    rank = other.rank;
+    crowding_distance = other.crowding_distance;
+
+    objectives = other.objectives;
 
     return *this;
+  }
+*/
+
+  MedeaNegotiator::~MedeaNegotiator()
+  {
+    delete rng_;
+    delete thread_orchestrator_;
+  }
+  
+
+  MedeaMapping::MedeaMapping(unsigned id, config::CompoundConfig &config, model::Engine::Specs &arch_specs, problem::Workload &workload) : id(id)
+  {
+    auto root = config.getRoot();
+    auto mapping_config = root.lookup("mapping");
+
+    arch = MinimalArchSpecs(root.lookup("arch").getYNode());
+
+    mapping = mapping::ParseAndConstructFixed(mapping_config, arch_specs, workload);
+
+    auto stats = root.lookup("stats");
+    stats.lookupValue("energy", energy);
+    stats.lookupValue("cycles", cycles);
+    stats.lookupValue("area", area);
   }
 }
