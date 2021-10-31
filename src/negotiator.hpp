@@ -8,44 +8,10 @@
 #include "individual.hpp"
 #include "accelergy.hpp"
 #include "mapping.hpp"
-
+#include "negotiator-individual.hpp"
 
 namespace medea
 {
-
-  class MedeaMapping
-  {
-  public:
-    unsigned id = 0;
-    MinimalArchSpecs arch;
-    Mapping mapping;
-    double area, energy, cycles;
-
-    MedeaMapping() = default;
-    MedeaMapping(unsigned id, config::CompoundConfig &config, model::Engine::Specs &arch_specs, problem::Workload &workload);
-  };
-
-  struct NegotiatorIndividual
-  {
-
-    struct Eval
-    {
-      double energy, cycles;
-      bool need_evaluation;
-    };
-
-    std::vector<size_t> mapping_id_set;
-    std::vector<Eval> mapping_evaluations;
-
-    MinimalArchSpecs negotiated_arch;
-    model::Engine::Specs negotiated_arch_specs;
-
-    unsigned rank;
-    double crowding_distance;
-    std::array<double, 3> objectives; // Energy, Cycles, Area
-  };
-
-  typedef std::vector<NegotiatorIndividual> NegotiatorPopulation;
 
   class MedeaNegotiator
   {
@@ -88,29 +54,17 @@ namespace medea
 
   private:
 
-    void AssignRankAndCrowdingDistance(NegotiatorPopulation &population);
+    Dominance CheckDominance(const NegotiatorIndividual &a, const NegotiatorIndividual &b);
 
     void AssignCrowdingDistance(NegotiatorPopulation &population, std::vector<size_t> &pareto_front);
+
+    void AssignRankAndCrowdingDistance(NegotiatorPopulation &population);
 
     void Merging();
 
     void Survival();
 
     unsigned OutputParetoFrontFiles();
-
-  private:
-  
-    NegotiatorIndividual RandomIndividual();
-
-    void EvaluateIndividual(NegotiatorIndividual &individual);
-
-    bool NegotiateArchitecture(NegotiatorIndividual &individual);
-
-    void MutateIndividual(NegotiatorIndividual &individual);
-
-    void Crossover(NegotiatorIndividual &offspring_a, NegotiatorIndividual &offspring_b);
-
-    Dominance CheckDominance(const NegotiatorIndividual &a, const NegotiatorIndividual &b);
 
   };
 

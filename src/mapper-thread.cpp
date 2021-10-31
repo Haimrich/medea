@@ -731,7 +731,6 @@ namespace medea
   MedeaMapperThread::MedeaMapperThread(
       unsigned thread_id,
       config::CompoundConfig *config,
-      std::string out_dir,
       problem::Workload &workload,
       model::Engine::Specs arch_specs,
       config::CompoundConfigNode arch_config,
@@ -759,7 +758,6 @@ namespace medea
       RandomGenerator128 *sp_rng,
       RandomGenerator128 *crossover_rng) : thread_id_(thread_id),
                                            config_(config),
-                                           out_dir_(out_dir),
                                            workload_(workload),
                                            arch_specs_(arch_specs),
                                            arch_config_(arch_config),

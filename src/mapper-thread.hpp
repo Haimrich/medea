@@ -18,7 +18,6 @@ namespace medea
     unsigned thread_id_;
 
     config::CompoundConfig *config_;
-    std::string out_dir_;
 
     problem::Workload &workload_;
     model::Engine::Specs arch_specs_;
@@ -101,7 +100,6 @@ namespace medea
     MedeaMapperThread(
         unsigned thread_id,
         config::CompoundConfig *config,
-        std::string out_dir,
         problem::Workload &workload,
         model::Engine::Specs arch_specs,
         config::CompoundConfigNode arch_config,

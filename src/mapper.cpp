@@ -369,7 +369,6 @@ namespace medea
           new MedeaMapperThread(
               t,
               config_,
-              out_dir_,
               workload_,
               arch_specs_,
               arch_config_,
@@ -445,6 +444,10 @@ namespace medea
     // ============
     // Termination.
     // ============
+
+    for (unsigned t = 0; t < num_threads_; t++)
+      threads_.at(t)->Join();
+
     population_file.close();
 
     auto chrono_end = std::chrono::high_resolution_clock::now();
