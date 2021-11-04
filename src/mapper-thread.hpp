@@ -38,7 +38,7 @@ namespace medea
     uint32_t num_generations_;
 
     double fill_mutation_prob_, parallel_mutation_prob_, random_mutation_prob_;
-    bool use_tournament_;
+    bool use_tournament_, update_ert_;
     Accelergy& accelergy_;
 
     Mapping user_mapping_;
@@ -118,6 +118,7 @@ namespace medea
         double parallel_mutation_prob,
         double random_mutation_prob,
         bool use_tournament,
+        bool update_ert,
         Accelergy &accelergy,
         Mapping user_mapping,
         bool user_mapping_defined,

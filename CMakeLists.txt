@@ -21,10 +21,6 @@ include_directories(
     ${PROJECT_SOURCE_DIR}/lib/timeloop/pat-public/src
 )
 
-file(GLOB_RECURSE MEDEA_SRCS CONFIGURE_DEPENDS 
-        "${PROJECT_SOURCE_DIR}/src/*.?pp" 
-        "${PROJECT_SOURCE_DIR}/include/*.?pp"
-    )
 set(TIMELOOP_SRCS
     "${PROJECT_SOURCE_DIR}/lib/timeloop/src/loop-analysis/tiling.cpp"
     "${PROJECT_SOURCE_DIR}/lib/timeloop/src/loop-analysis/nest-analysis.cpp"
@@ -48,7 +44,22 @@ set(TIMELOOP_SRCS
     "${PROJECT_SOURCE_DIR}/lib/timeloop/src/mapping/parser.cpp"
     "${PROJECT_SOURCE_DIR}/lib/timeloop/src/mapspaces/mapspace-base.cpp"
 )
+
+file(GLOB_RECURSE MEDEA_SRCS CONFIGURE_DEPENDS 
+        "${PROJECT_SOURCE_DIR}/src/*.?pp" 
+        "${PROJECT_SOURCE_DIR}/include/*.?pp"
+    )
+
+list(FILTER MEDEA_SRCS EXCLUDE REGEX "simple-negotiator.")
 add_executable(medea ${MEDEA_SRCS} ${TIMELOOP_SRCS})
+
+file(GLOB_RECURSE SIMPLEN_SRCS CONFIGURE_DEPENDS 
+        "${PROJECT_SOURCE_DIR}/src/*.?pp" 
+        "${PROJECT_SOURCE_DIR}/include/*.?pp"
+    )
+
+list(FILTER SIMPLEN_SRCS EXCLUDE REGEX "main\.|/negotiator\.")
+add_executable(simple-negotiator ${SIMPLEN_SRCS} ${TIMELOOP_SRCS})
 
 # LIBCONFIG++
 find_library(CONFIG++_LIBRARY NAMES config++ PATH ${LIBDIR})
@@ -69,5 +80,8 @@ include_directories(${Boost_INCLUDE_DIRS})
 # Linking
 target_link_libraries(medea ${Boost_LIBRARIES} ${YAML_CPP_LIBRARIES} ${CONFIG++_LIBRARY})
 target_link_options(medea PRIVATE -static-libgcc -static-libstdc++)
+target_link_libraries(simple-negotiator ${Boost_LIBRARIES} ${YAML_CPP_LIBRARIES} ${CONFIG++_LIBRARY})
+target_link_options(simple-negotiator PRIVATE -static-libgcc -static-libstdc++)
 
 install(TARGETS medea RUNTIME DESTINATION bin)
+install(TARGETS simple-negotiator RUNTIME DESTINATION bin)

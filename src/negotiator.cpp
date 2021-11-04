@@ -224,6 +224,7 @@ namespace medea
     int max_digits_inds = std::to_string(population_size_).length();
     int max_digits_layers = std::to_string(layer_workload_lookup_.size()).length();
     
+    fs::create_directories(dir);
     std::string global_stats_filename = dir + "/medea.stats.txt";
     std::ofstream global_stats_file(global_stats_filename);
 

@@ -150,7 +150,7 @@ namespace medea
     model::Engine::Specs new_engine_specs;
     new_engine_specs.topology = new_specs;
     new_engine_specs.topology.ParseAccelergyART(rt.area);
-    new_engine_specs.topology.ParseAccelergyERT(rt.energy);
+    if (update_ert_) new_engine_specs.topology.ParseAccelergyERT(rt.energy);
     engine.Spec(new_engine_specs);
 
     // Architectural updates for negotiator
@@ -749,6 +749,7 @@ namespace medea
       double parallel_mutation_prob,
       double random_mutation_prob,
       bool use_tournament,
+      bool update_ert,
       Accelergy &accelergy,
       Mapping user_mapping,
       bool user_mapping_defined,
@@ -777,6 +778,7 @@ namespace medea
                                            parallel_mutation_prob_(parallel_mutation_prob),
                                            random_mutation_prob_(random_mutation_prob),
                                            use_tournament_(use_tournament),
+                                           update_ert_(update_ert),
                                            accelergy_(accelergy),
                                            user_mapping_(user_mapping),
                                            user_mapping_defined_(user_mapping_defined),

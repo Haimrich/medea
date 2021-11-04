@@ -72,14 +72,8 @@ int main(int argc, char *argv[])
 
     /* ==== Preparation ==== */
 
-    std::string input_dir;
-    fs::path input_dir_path;
-    if (vm.count("input-dir")) {
-      input_dir = vm["input-dir"].as<string>();
-      input_dir_path = fs::path(input_dir);
-    } else {
-      input_dir = ".";
-    }
+    string input_dir = vm.count("input-dir") ? vm["input-dir"].as<string>() : ".";
+    fs::path input_dir_path(input_dir);
 
     vector<size_t> layer_workload_lookup = vm.count("lookup") ? 
       vm["lookup"].as<vector<size_t>>() : vector<size_t>();

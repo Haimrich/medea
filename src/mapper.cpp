@@ -108,6 +108,8 @@ namespace medea
     medea.lookupValue("random-mutation-prob", random_mutation_prob_);
     use_tournament_ = false;
     medea.lookupValue("use-tournament", use_tournament_);
+    update_ert_ = true;
+    medea.lookupValue("update-ert", update_ert_);
 
     std::cout << std::setprecision(3) << "Fill Mut. Prob.: " << fill_mutation_prob_ << " - Parallel Mut. Prob.: " << parallel_mutation_prob_ << " - Random Mut. Prob.: " << random_mutation_prob_ << " - Using tournament: " << use_tournament_ << std::endl;
 
@@ -387,6 +389,7 @@ namespace medea
               parallel_mutation_prob_,
               random_mutation_prob_,
               use_tournament_,
+              update_ert_,
               accelergy_,
               user_mapping_,
               user_mapping_defined_,

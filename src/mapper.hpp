@@ -42,7 +42,7 @@ namespace medea
 
     double fill_mutation_prob_, parallel_mutation_prob_, random_mutation_prob_;
     Accelergy &accelergy_;
-    bool use_tournament_;
+    bool use_tournament_, update_ert_;
 
     Orchestrator *thread_orchestrator_;
     std::mutex global_mutex_;
