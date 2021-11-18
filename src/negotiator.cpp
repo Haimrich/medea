@@ -64,8 +64,8 @@ namespace medea
 
     auto medea = rootNode.lookup("medea");
 
-    double pareto_sieving = -1;
-    medea.lookupValue("pareto-sieving", pareto_sieving);
+    pareto_sieving_ = -1;
+    medea.lookupValue("pareto-sieving", pareto_sieving_);
 
     workload_mappings_.reserve(workloads_files_paths.size());
     for (auto& workload_file : workloads_files_paths) {
@@ -91,13 +91,13 @@ namespace medea
         mappings.emplace_back(i, pareto_config, default_arch_, workload);
       }
       
-      if (0 <= pareto_sieving || pareto_sieving >= 1) 
+      if (pareto_sieving_ <= 0.0 || pareto_sieving_ >= 1.0) 
       {
         workload_mappings_.push_back(mappings);
       } 
       else // Sieving 
       {
-        size_t num_selected = static_cast<size_t>(std::ceil(pareto_sieving * mappings.size()));
+        size_t num_selected = static_cast<size_t>(std::ceil(pareto_sieving_ * mappings.size()));
         std::vector<MedeaMapping> sieved_mappings(2 * num_selected);
 
         std::partial_sort_copy(mappings.begin(), mappings.end(), sieved_mappings.begin(), sieved_mappings.begin() + num_selected,
@@ -181,7 +181,10 @@ namespace medea
     thread_orchestrator_->LeaderDone();
     thread_orchestrator_->LeaderWait();
 
+    InjectSingleObjectiveBestIndividuals(parent_population_);
+
     //AssignRankAndCrowdingDistance(parent_population_);
+
     population_ = parent_population_;
     std::cout << "[INFO] Initial Population Done." << std::endl;
 
@@ -215,6 +218,29 @@ namespace medea
     std::cout << "[MEDEA] Elapsed time: " << chrono_duration << " seconds. Saving output..." << std::endl;
 
     return OutputParetoFrontFiles();
+  }
+
+
+  void MedeaNegotiator::InjectSingleObjectiveBestIndividuals(NegotiatorPopulation& population) 
+  {
+    if (pareto_sieving_ <= 0.0 || pareto_sieving_ >= 1.0) return;
+    std::uniform_int_distribution<size_t> uni_dist(0, population.size()-1);
+    size_t cycles_idx = uni_dist(*rng_);
+    size_t energy_idx;
+    do {
+      energy_idx = uni_dist(*rng_);
+    } while (energy_idx == cycles_idx);
+
+    for (size_t i = 0; i < num_layers_; i++) 
+    {
+      population[cycles_idx].mapping_id_set[i] = 0;
+      population[cycles_idx].mapping_evaluations[i].need_evaluation = true;
+
+      size_t w = layer_workload_lookup_[i];
+      population[energy_idx].mapping_id_set[i] = static_cast<size_t>( std::ceil( pareto_sieving_ * workload_mappings_[w].size() ) );
+      population[energy_idx].mapping_evaluations[i].need_evaluation = true;
+    }
+
   }
 
 

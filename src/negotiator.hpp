@@ -41,6 +41,7 @@ namespace medea
 
     double mutation_prob_, individual_mutation_prob_;
     double crossover_prob_, individual_crossover_prob_;
+    double pareto_sieving_;
 
     size_t num_layers_;
 
@@ -53,6 +54,8 @@ namespace medea
     unsigned Run();
 
   private:
+
+    void InjectSingleObjectiveBestIndividuals(NegotiatorPopulation& population);
 
     Dominance CheckDominance(const NegotiatorIndividual &a, const NegotiatorIndividual &b);
 
