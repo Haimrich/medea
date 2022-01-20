@@ -3,6 +3,14 @@
 Multi-Objective Design Space Exploration framework leveraging [Timeloop](https://github.com/NVlabs/timeloop) model.
 
 ## Installation
+### Docker
+```
+git clone --recursive https://github.com/Haimrich/medea.git
+cd medea
+docker-compose run --rm medea
+```
+
+### Ubuntu 20.04
 Install dependancies
 ```
 sudo apt-get update
