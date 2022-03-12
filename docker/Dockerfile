@@ -2,7 +2,9 @@ FROM ubuntu:focal
 
 ENV DEBIAN_FRONTEND=noninteractive 
 RUN apt-get update
-RUN apt-get install -y git build-essential python3-pip cmake libboost-all-dev libconfig++-dev libyaml-cpp-dev
+RUN apt-get install -y git build-essential cmake
+RUN apt-get install -y libboost-all-dev libconfig++-dev libyaml-cpp-dev
+RUN apt-get install -y python3-pip python-is-python3 
 
 WORKDIR /setup/accelergy
 RUN git clone https://github.com/HewlettPackard/cacti.git
@@ -10,7 +12,7 @@ RUN git clone https://github.com/Accelergy-Project/accelergy.git
 RUN git clone https://github.com/Accelergy-Project/accelergy-aladdin-plug-in.git
 RUN git clone https://github.com/Accelergy-Project/accelergy-cacti-plug-in.git
 RUN git clone https://github.com/Accelergy-Project/accelergy-table-based-plug-ins.git
-RUN cd cacti && make
+RUN cd cacti && make -j4
 RUN cd accelergy && pip3 install .
 RUN cd accelergy-aladdin-plug-in/ && pip3 install .
 RUN cd accelergy-cacti-plug-in/ && pip3 install .

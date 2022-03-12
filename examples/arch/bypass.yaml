@@ -1,0 +1,37 @@
+mapspace:
+  constraints:
+  - target: PEWeightRegs
+    type: datatype 
+    keep:
+    - Weights
+    bypass:
+    - Inputs 
+    - Outputs
+  - target: PEAccuBuffer
+    type: datatype
+    keep:
+    - Outputs
+    bypass:
+    - Weights
+    - Inputs
+  - target: PEWeightBuffer
+    type: datatype
+    keep:
+    - Weights
+    bypass:
+    - Inputs
+    - Outputs
+  - target: PEInputBuffer
+    type: datatype
+    keep:
+    - Inputs
+    bypass:
+    - Weights
+    - Outputs
+  - target: GlobalBuffer
+    type: datatype
+    keep:
+    - Inputs
+    - Outputs
+    bypass:
+    - Weights

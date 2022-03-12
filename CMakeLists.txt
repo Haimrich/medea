@@ -7,7 +7,7 @@ endif()
 
 set(CMAKE_CXX_FLAGS "-Werror -Wall -Wextra -fmax-errors=1 -pthread -g")
 set(CMAKE_CXX_FLAGS_DEBUG "-Og -DDEBUG")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3  -flto")
 add_compile_definitions(USE_ACCELERGY BUILD_BASE_DIR="${CMAKE_SOURCE_DIR}/lib/timeloop")
 
 project(medea)

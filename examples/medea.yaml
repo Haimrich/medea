@@ -7,7 +7,7 @@ medea:
   use-tournament: True
   parallel-mutation-prob: 0.7
   fill-mutation-prob: 0.7
-  workload-input-folder: "workloads"
-  output-folder: "output"
-  actual-layer-workload-lookup: [0,1,2,3,4,4,5,6]
-  same-workload-same-mapping: False
+  negotiator-population-size: 120
+  negotiator-num-generations: 22
+  pareto-sieving: 0.08 #0.06
+  update-ert: False # Calculate Access Energy on Minimal Arch.
